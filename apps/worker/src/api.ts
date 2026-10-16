@@ -44,6 +44,7 @@ import {
   updateFeedback,
 } from './services/feedback';
 import { getPaymentInfo, setPaymentInfo } from './services/payments';
+import { getUsage } from './services/usage';
 import { createSettlement, deleteSettlement, getSummary, listSettlements } from './services/settlements';
 
 type Ctx = Context<AppEnv>;
@@ -310,6 +311,11 @@ api.patch('/admin/feedback/:id', async (c) => {
     }
   }
   return c.json({ ...updated, notified });
+});
+
+api.get('/admin/usage', async (c) => {
+  requireAdmin(c);
+  return c.json(await getUsage(c.env.DB, new LineClient(c.env.LINE_CHANNEL_ACCESS_TOKEN)));
 });
 
 /** The caller's own payment details; nobody can read or change another user's here. */

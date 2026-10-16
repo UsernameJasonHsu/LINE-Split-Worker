@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { errorMessage, type AccountApi, type AdminFeedback, type FeedbackStatus } from '../api';
 import { formatDate, TopBar } from '../components';
 import { CATEGORY_LABELS, STATUS_LABELS } from '../lib/feedback';
+import { UsageCard } from './UsageCard';
 
 const FILTERS: { key: FeedbackStatus | 'all'; label: string }[] = [
   { key: 'new', label: STATUS_LABELS.new },
@@ -39,6 +40,7 @@ export function AdminFeedbackView({
   return (
     <main className="page">
       <TopBar title="回饋管理" onBack={onBack} />
+      <UsageCard account={account} />
       <div className="chips" role="tablist">
         {FILTERS.map((f) => (
           <button

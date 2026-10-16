@@ -112,6 +112,16 @@ export interface AdminFeedback extends Feedback {
   context: Record<string, unknown> | null;
 }
 
+export interface Usage {
+  database: {
+    sizeBytes: number | null;
+    limitBytes: number;
+    counts: { ledgers: number; users: number; expenses: number; feedback: number };
+  };
+  line: { quota: number | null; used: number } | null;
+  links: { workers: string; d1: string; lineManager: string };
+}
+
 type Request = <T>(method: string, path: string, body?: unknown) => Promise<T>;
 
 function makeRequest(getIdToken: () => string | null): Request {
@@ -151,6 +161,7 @@ export function createAccountApi(getIdToken: () => string | null) {
     adminFeedback: async (status?: FeedbackStatus) =>
       (await request<{ feedback: AdminFeedback[] }>('GET', `/api/admin/feedback${status ? `?status=${status}` : ''}`))
         .feedback,
+    adminUsage: () => request<Usage>('GET', '/api/admin/usage'),
     updateFeedback: (id: string, patch: { status?: FeedbackStatus; adminNote?: string | null; notify?: boolean }) =>
       request<AdminFeedback & { notified: boolean }>('PATCH', `/api/admin/feedback/${encodeURIComponent(id)}`, patch),
   };

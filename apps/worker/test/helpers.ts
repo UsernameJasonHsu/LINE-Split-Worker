@@ -82,6 +82,7 @@ export function installFakeExternal() {
   const idTokens = new Map<string, FakeUser>();
   const fxRates: Record<string, Record<string, number>> = {};
   const calls = { fx: 0 };
+  const lineQuota: { value: number | null; used: number; fail?: boolean } = { value: 200, used: 2 };
 
   http.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input.toString());
@@ -93,6 +94,14 @@ export function installFakeExternal() {
         return Response.json({ error: 'invalid_request' }, { status: 400 });
       }
       return Response.json({ ...user, exp: Math.floor(Date.now() / 1000) + 3600 });
+    }
+    if (url.href === 'https://api.line.me/v2/bot/message/quota') {
+      if (lineQuota.fail) return new Response('{"message":"error"}', { status: 500 });
+      return Response.json(lineQuota.value === null ? { type: 'none' } : { type: 'limited', value: lineQuota.value });
+    }
+    if (url.href === 'https://api.line.me/v2/bot/message/quota/consumption') {
+      if (lineQuota.fail) return new Response('{"message":"error"}', { status: 500 });
+      return Response.json({ totalUsage: lineQuota.used });
     }
     if (url.href === 'https://api.line.me/v2/bot/message/push') {
       pushes.push(JSON.parse(String(init?.body)));
@@ -115,7 +124,7 @@ export function installFakeExternal() {
     throw new Error(`Unexpected fetch: ${url.href}`);
   };
 
-  return { replies, pushes, idTokens, fxRates, calls };
+  return { replies, pushes, idTokens, fxRates, calls, lineQuota };
 }
 
 export function apiRequest(method: string, path: string, token?: string, body?: unknown): Request {

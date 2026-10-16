@@ -779,3 +779,65 @@ textarea:focus {
   gap: 8px;
   font-size: 14px;
 }
+
+.usage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.usage-title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.usage-card p {
+  margin: 0;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.meter-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+
+.meter-fill.warn {
+  background: var(--negative);
+}
+
+.negative {
+  color: var(--negative);
+}
+
+.usage-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 14px;
+}
+
+.usage-links a {
+  color: var(--brand);
+  font-weight: 600;
+  text-decoration: none;
+}

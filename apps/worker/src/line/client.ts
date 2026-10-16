@@ -34,6 +34,15 @@ export class LineClient {
     await this.request('POST', '/v2/bot/message/push', { to, messages });
   }
 
+  /** Monthly push allowance (`null` = unlimited plan) and this month's usage. */
+  async getPushQuota(): Promise<{ quota: number | null; used: number }> {
+    const [quota, consumption] = await Promise.all([
+      this.request('GET', '/v2/bot/message/quota').then((r) => r.json<{ type: string; value?: number }>()),
+      this.request('GET', '/v2/bot/message/quota/consumption').then((r) => r.json<{ totalUsage: number }>()),
+    ]);
+    return { quota: quota.type === 'limited' ? (quota.value ?? null) : null, used: consumption.totalUsage };
+  }
+
   async getGroupMemberProfile(groupId: string, userId: string): Promise<LineProfile> {
     const path = `/v2/bot/group/${encodeURIComponent(groupId)}/member/${encodeURIComponent(userId)}`;
     return (await this.request('GET', path)).json<LineProfile>();
