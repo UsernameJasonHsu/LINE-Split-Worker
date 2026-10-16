@@ -542,3 +542,29 @@ fieldset.plain {
   padding: 0;
   min-width: 0;
 }
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+}
+
+.inline-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline-form .button {
+  flex: none;
+  min-height: 44px;
+}
+
+.start-next {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.start-next p {
+  color: var(--text);
+}

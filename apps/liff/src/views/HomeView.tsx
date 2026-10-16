@@ -2,8 +2,10 @@ import { navigate, type ViewProps } from '../App';
 import { Avatar, formatDate, memberLookup, Money, TopBar } from '../components';
 import type { Expense } from '../api';
 import { openLedger } from '../liff';
+import { StartNextLedger } from './StartNextLedger';
 
-export function HomeView({ data }: ViewProps) {
+export function HomeView(props: ViewProps) {
+  const { data } = props;
   const { view, expenses, summary } = data;
   const base = view.ledger.baseCurrency;
   const members = memberLookup(view.members);
@@ -35,10 +37,12 @@ export function HomeView({ data }: ViewProps) {
       {closedAt !== null ? (
         <div className="banner">
           <p>這本帳本已於 {formatDate(closedAt)} 結束，僅供查看。</p>
-          {activeLedgerId && (
+          {activeLedgerId ? (
             <button type="button" className="link-button" onClick={() => openLedger(activeLedgerId)}>
               前往目前的帳本 ›
             </button>
+          ) : (
+            <StartNextLedger {...props} />
           )}
         </div>
       ) : (

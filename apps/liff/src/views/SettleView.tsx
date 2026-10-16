@@ -3,14 +3,14 @@ import { useState } from 'react';
 import { errorMessage } from '../api';
 import { navigate, type ViewProps } from '../App';
 import { Avatar, formatDate, memberLookup, Money, TopBar } from '../components';
-import { ledgerLink, openLedger, shareText, trySendToChat } from '../liff';
+import { ledgerLink, shareText, trySendToChat } from '../liff';
 
 export function SettleView({ api, data, reload, notify }: ViewProps) {
   const { view, summary, settlements, expenses } = data;
   const base = view.ledger.baseCurrency;
   const members = memberLookup(view.members);
   const [busy, setBusy] = useState(false);
-  const [nextName, setNextName] = useState('');
+  const [name, setName] = useState(view.ledger.name);
   const closed = view.ledger.closedAt !== null;
 
   async function run(action: () => Promise<unknown>, done?: string) {
@@ -59,19 +59,23 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
 
   const hasActivity = expenses.length > 0 || settlements.length > 0;
 
-  const closeAndStartNext = () => {
-    const name = nextName.trim();
-    if (!name) return;
+  const closeLedger = () => {
     const pending = summary.transfers.length;
     const warning = pending
-      ? `還有 ${pending} 筆款項尚未結清，結束後無法再標記已付（紀錄仍可查看）。\n\n確定結束「${view.ledger.name}」並開始「${name}」？`
-      : `結束「${view.ledger.name}」並開始新帳本「${name}」？\n舊帳本會保留為唯讀。`;
+      ? `還有 ${pending} 筆款項尚未結清，結束後無法再標記已付（紀錄仍可查看）。\n\n確定結束「${view.ledger.name}」？`
+      : `結束「${view.ledger.name}」？\n帳本會保留為唯讀，之後可隨時開新帳本。`;
     if (!window.confirm(warning)) return;
     void run(async () => {
-      const next = await api.closeLedger(name);
-      await trySendToChat(`📒 「${view.ledger.name}」已結束，開始新帳本「${name}」\n${ledgerLink(next.ledger.id)}`);
-      openLedger(next.ledger.id);
-    });
+      await api.closeLedger();
+      await trySendToChat(`📒 「${view.ledger.name}」已結束。\n下次要記帳時，在群組輸入「帳本」即可開新帳本。`);
+      navigate({ name: 'home' });
+    }, '帳本已結束');
+  };
+
+  const rename = () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === view.ledger.name) return;
+    void run(() => api.patchLedger({ name: trimmed }), '已更新名稱');
   };
 
   return (
@@ -164,6 +168,20 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
           <h2 className="section-title">帳本設定</h2>
           <section className="card form">
             <label className="field">
+              <span>帳本名稱</span>
+              <span className="inline-form">
+                <input value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
+                <button
+                  type="button"
+                  className="button small"
+                  disabled={busy || !name.trim() || name.trim() === view.ledger.name}
+                  onClick={rename}
+                >
+                  儲存
+                </button>
+              </span>
+            </label>
+            <label className="field">
               <span>主幣別（結算用）</span>
               <select
                 value={base}
@@ -183,24 +201,10 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
           <h2 className="section-title">結束帳本</h2>
           <section className="card form">
             <p className="muted small">
-              旅程或活動結束後，可以開一本新帳本給下一次使用。成員會自動帶入，這本帳本會保留為唯讀，可從首頁右上角「☰」查看。
+              旅程或活動結束後可以結束帳本，帳本會保留為唯讀，可從首頁右上角「☰」查看。等確定下一次的主題再開新帳本，成員會自動帶入。
             </p>
-            <label className="field">
-              <span>新帳本名稱</span>
-              <input
-                value={nextName}
-                onChange={(e) => setNextName(e.target.value)}
-                placeholder="例如：韓國行"
-                maxLength={50}
-              />
-            </label>
-            <button
-              type="button"
-              className="button block"
-              disabled={busy || !nextName.trim()}
-              onClick={closeAndStartNext}
-            >
-              結束這本帳本，開新帳本
+            <button type="button" className="button danger block" disabled={busy} onClick={closeLedger}>
+              結束這本帳本
             </button>
           </section>
         </>

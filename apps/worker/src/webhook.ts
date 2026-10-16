@@ -5,6 +5,7 @@ import {
   HELP_TEXT,
   ledgerLinkMessage,
   liffUrl,
+  noOpenLedgerMessage,
   summaryMessage,
   welcomeMessage,
 } from './line/messages';
@@ -12,7 +13,9 @@ import { verifySignature } from './line/signature';
 import {
   archiveGroupLedger,
   ensureGroupLedger,
+  findLatestLedgerByGroup,
   findMemberByLineUser,
+  findOpenLedgerByGroup,
   listMembers,
   upsertLineMember,
   type LedgerRow,
@@ -88,8 +91,16 @@ async function handleEvent(event: WebhookEvent, env: Env, line: LineClient): Pro
       await archiveGroupLedger(env.DB, source.groupId);
       return;
     case 'message': {
-      const ledger = await groupLedger();
-      if (source.userId) await registerSpeaker(env, line, ledger, source.groupId, source.userId);
+      // Between ledgers (last one closed) the group has no open ledger; commands
+      // then refer to the latest one. A ledger is only auto-created for a group
+      // that has never had one (bot added before this service existed).
+      const ledger =
+        (await findOpenLedgerByGroup(env.DB, source.groupId)) ??
+        (await findLatestLedgerByGroup(env.DB, source.groupId)) ??
+        (await groupLedger());
+      if (source.userId && ledger.closed_at === null) {
+        await registerSpeaker(env, line, ledger, source.groupId, source.userId);
+      }
       if (event.message?.type === 'text' && event.message.text && replyToken) {
         await handleCommand(event.message.text.trim(), replyToken, env, line, ledger);
       }
@@ -110,7 +121,9 @@ async function handleCommand(text: string, replyToken: string, env: Env, line: L
   switch (text) {
     case '帳本':
     case '記帳':
-      await line.reply(replyToken, [ledgerLinkMessage(ledger.name, url)]);
+      await line.reply(replyToken, [
+        ledger.closed_at === null ? ledgerLinkMessage(ledger.name, url) : noOpenLedgerMessage(ledger.name, url),
+      ]);
       return;
     case '結算': {
       const members = await listMembers(env.DB, ledger.id);
@@ -120,6 +133,7 @@ async function handleCommand(text: string, replyToken: string, env: Env, line: L
         summaryMessage(
           {
             ledgerName: ledger.name,
+            closed: ledger.closed_at !== null,
             baseCurrency: summary.baseCurrency,
             totalSpentMinor: summary.totalSpentMinor,
             transfers: summary.transfers,

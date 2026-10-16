@@ -67,35 +67,52 @@ export async function archiveGroupLedger(db: D1Database, groupId: string): Promi
     .run();
 }
 
+/** Most recently created ledger of the group, open or closed. */
+export function findLatestLedgerByGroup(db: D1Database, groupId: string): Promise<LedgerRow | null> {
+  return db
+    .prepare('SELECT * FROM ledgers WHERE line_group_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1')
+    .bind(groupId)
+    .first<LedgerRow>();
+}
+
+/** Marks the ledger finished (read-only). Returns false if it was already closed. */
+export async function closeLedger(db: D1Database, ledgerId: string): Promise<boolean> {
+  const result = await db
+    .prepare('UPDATE ledgers SET closed_at = ? WHERE id = ? AND closed_at IS NULL')
+    .bind(Date.now(), ledgerId)
+    .run();
+  return result.meta.changes > 0;
+}
+
 /**
- * Closes `ledger` and opens a new one for the same group, copying its members.
- * The follow-up inserts are guarded on the successor id written by the close,
- * so a concurrent close turns the whole batch into a no-op. Returns the new
- * ledger id, or null if the ledger was already closed.
+ * Opens a new ledger for `previous`'s group, copying its members and base
+ * currency. The partial unique index allows one open ledger per group, so the
+ * insert is a no-op when one already exists (including a concurrent start);
+ * the member copy is guarded on the new ledger existing. Returns the new
+ * ledger id, or null if the group already has an open ledger.
  */
-export async function closeAndStartNext(db: D1Database, ledger: LedgerRow, name: string): Promise<string | null> {
+export async function startNextLedger(db: D1Database, previous: LedgerRow, name: string): Promise<string | null> {
   const nextId = crypto.randomUUID();
-  const now = Date.now();
-  const [closed] = await db.batch([
-    db
-      .prepare('UPDATE ledgers SET closed_at = ?, successor_id = ? WHERE id = ? AND closed_at IS NULL')
-      .bind(now, nextId, ledger.id),
+  const created = 'EXISTS (SELECT 1 FROM ledgers WHERE id = ?)';
+  const [inserted] = await db.batch([
     db
       .prepare(
         `INSERT INTO ledgers (id, line_group_id, name, base_currency, created_at, archived_at)
-         SELECT ?, line_group_id, ?, base_currency, ?, archived_at FROM ledgers WHERE id = ? AND successor_id = ?`,
+         SELECT ?, line_group_id, ?, base_currency, ?, archived_at FROM ledgers
+         WHERE id = ? AND line_group_id IS NOT NULL
+         ON CONFLICT DO NOTHING`,
       )
-      .bind(nextId, name, now, ledger.id, nextId),
+      .bind(nextId, name, Date.now(), previous.id),
     db
       .prepare(
         `INSERT INTO members (id, ledger_id, line_user_id, display_name, avatar_url, is_virtual, joined_at)
          SELECT lower(hex(randomblob(16))), ?, line_user_id, display_name, avatar_url, is_virtual, joined_at
-         FROM members
-         WHERE ledger_id = ? AND EXISTS (SELECT 1 FROM ledgers WHERE id = ? AND successor_id = ?)`,
+         FROM members WHERE ledger_id = ? AND ${created}`,
       )
-      .bind(nextId, ledger.id, ledger.id, nextId),
+      .bind(nextId, previous.id, nextId),
+    db.prepare(`UPDATE ledgers SET successor_id = ? WHERE id = ? AND ${created}`).bind(nextId, previous.id, nextId),
   ]);
-  return closed!.meta.changes === 0 ? null : nextId;
+  return inserted!.meta.changes === 0 ? null : nextId;
 }
 
 export interface GroupLedgerSummary {

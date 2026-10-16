@@ -5,7 +5,7 @@ import { HttpError } from './errors';
 import { getFxRate } from './fx';
 import { verifyIdToken } from './line/idToken';
 import {
-  closeLedgerSchema,
+  ledgerNameSchema,
   expenseSchema,
   expenseUpdateSchema,
   fxQuerySchema,
@@ -14,13 +14,14 @@ import {
 } from './schemas';
 import { createExpense, deleteExpense, listExpenses, updateExpense } from './services/expenses';
 import {
-  closeAndStartNext,
+  closeLedger,
   findLedger,
   findMemberByLineUser,
   findOpenLedgerByGroup,
   hasLedgerActivity,
   listGroupLedgers,
   listMembers,
+  startNextLedger,
   updateLedger,
   upsertLineMember,
   type LedgerRow,
@@ -130,13 +131,20 @@ api.get('/ledgers/:ledgerId/history', async (c) => {
   return c.json({ ledgers });
 });
 
-/** Finishes this ledger and opens a new one for the group with the same members. */
+/** Finishes this ledger; it becomes read-only. A new one is started separately. */
 api.post('/ledgers/:ledgerId/close', async (c) => {
-  const { ledger } = requireOpen(await requireMember(c));
-  const { name } = await parseJson(c, closeLedgerSchema);
+  const scope = requireOpen(await requireMember(c));
+  if (!(await closeLedger(c.env.DB, scope.ledger.id))) throw new HttpError(409, 'This ledger is closed and read-only');
+  return c.json(await ledgerView(c.env.DB, { ...scope, ledger: (await findLedger(c.env.DB, scope.ledger.id))! }));
+});
+
+/** Starts the group's next ledger from this one (members carry over). */
+api.post('/ledgers/:ledgerId/next', async (c) => {
+  const { ledger } = await requireMember(c);
+  const { name } = await parseJson(c, ledgerNameSchema);
   if (!ledger.line_group_id) throw new HttpError(409, 'Only group ledgers can start a new ledger');
-  const nextId = await closeAndStartNext(c.env.DB, ledger, name);
-  if (!nextId) throw new HttpError(409, 'This ledger is closed and read-only');
+  const nextId = await startNextLedger(c.env.DB, ledger, name);
+  if (!nextId) throw new HttpError(409, 'The group already has an open ledger');
 
   const next = (await findLedger(c.env.DB, nextId))!;
   const members = await listMembers(c.env.DB, nextId);

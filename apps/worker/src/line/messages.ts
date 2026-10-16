@@ -69,8 +69,47 @@ export function ledgerLinkMessage(ledgerName: string, url: string) {
   };
 }
 
+export function noOpenLedgerMessage(lastLedgerName: string, url: string) {
+  return {
+    type: 'flex',
+    altText: '目前沒有進行中的帳本',
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          { type: 'text', text: '目前沒有進行中的帳本', weight: 'bold', wrap: true },
+          {
+            type: 'text',
+            text: `上一本「${lastLedgerName}」已結束。準備好下一次的主題後，點下方按鈕開新帳本。`,
+            wrap: true,
+            size: 'sm',
+            color: '#555555',
+          },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color: LINE_GREEN,
+            action: { type: 'uri', label: '開新帳本', uri: url },
+          },
+        ],
+      },
+    },
+  };
+}
+
 export interface SummaryView {
   ledgerName: string;
+  closed?: boolean;
   baseCurrency: string;
   totalSpentMinor: number;
   transfers: Transfer[];
@@ -78,7 +117,8 @@ export interface SummaryView {
 }
 
 export function summaryMessage(view: SummaryView, url: string) {
-  const { ledgerName, baseCurrency, totalSpentMinor, transfers, nameOf } = view;
+  const { ledgerName, closed, baseCurrency, totalSpentMinor, transfers, nameOf } = view;
+  const title = `${ledgerName} 結算${closed ? '（已結束）' : ''}`;
   const rows =
     transfers.length === 0
       ? [{ type: 'text', text: '目前沒有待結清的款項 🎉', size: 'sm', color: '#555555' }]
@@ -100,7 +140,7 @@ export function summaryMessage(view: SummaryView, url: string) {
 
   return {
     type: 'flex',
-    altText: `「${ledgerName}」結算：${transfers.length} 筆待轉帳`,
+    altText: `「${ledgerName}」結算${closed ? '（已結束）' : ''}：${transfers.length} 筆待轉帳`,
     contents: {
       type: 'bubble',
       body: {
@@ -108,7 +148,7 @@ export function summaryMessage(view: SummaryView, url: string) {
         layout: 'vertical',
         spacing: 'md',
         contents: [
-          { type: 'text', text: `${ledgerName} 結算`, weight: 'bold', size: 'lg', wrap: true },
+          { type: 'text', text: title, weight: 'bold', size: 'lg', wrap: true },
           {
             type: 'text',
             text: `總支出 ${formatMoney(totalSpentMinor, baseCurrency)}`,

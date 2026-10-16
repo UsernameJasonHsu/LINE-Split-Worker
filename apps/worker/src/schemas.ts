@@ -47,6 +47,6 @@ export const ledgerPatchSchema = z.object({
   baseCurrency: currency.optional(),
 });
 
-export const closeLedgerSchema = z.object({ name: z.string().trim().min(1).max(50) });
+export const ledgerNameSchema = z.object({ name: z.string().trim().min(1).max(50) });
 
 export const fxQuerySchema = z.object({ from: currency, to: currency });
