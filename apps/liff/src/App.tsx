@@ -17,6 +17,7 @@ import { FeedbackView } from './views/FeedbackView';
 import { HomeView } from './views/HomeView';
 import { LedgersView } from './views/LedgersView';
 import { SettleView } from './views/SettleView';
+import { StatsView } from './views/StatsView';
 
 export interface LedgerData {
   view: LedgerView;
@@ -32,6 +33,7 @@ export type Route =
   | { name: 'settle' }
   | { name: 'ledgers' }
   | { name: 'feedback' }
+  | { name: 'stats' }
   | { name: 'admin' };
 
 function parseHash(hash: string): Route {
@@ -40,6 +42,7 @@ function parseHash(hash: string): Route {
   if (hash === '#/settle') return { name: 'settle' };
   if (hash === '#/ledgers') return { name: 'ledgers' };
   if (hash === '#/feedback') return { name: 'feedback' };
+  if (hash === '#/stats') return { name: 'stats' };
   if (hash === '#/admin') return { name: 'admin' };
   return { name: 'home' };
 }
@@ -188,6 +191,7 @@ export function App() {
       {route.name === 'expense' && <ExpenseFormView key={route.id ?? 'new'} {...ctx} expenseId={route.id} />}
       {route.name === 'settle' && <SettleView {...ctx} />}
       {route.name === 'ledgers' && <LedgersView {...ctx} />}
+      {route.name === 'stats' && <StatsView {...ctx} />}
       {route.name === 'feedback' && (
         <FeedbackView account={ctx.api} ledgerId={ctx.data.view.ledger.id} notify={setToast} onBack={back} />
       )}

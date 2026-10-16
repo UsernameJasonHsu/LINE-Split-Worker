@@ -72,7 +72,8 @@ audit_logs      (id, ledger_id, actor_member_id, action, entity, before_json, af
 |---|---|
 | P0 | Bot 入群建帳本、成員加入、支出 CRUD、均分、多幣別（臺銀匯率＋手動）、結算建議、標記已付、群組指令「結算」回覆摘要 |
 | P1 | 依金額／比例／份數分攤、多人付款、依原幣別分開結算、修改紀錄、分類 |
-| P2 | 收據 OCR、匯出 CSV、虛擬成員 |
+| 已完成（追加） | 分類（food/transport/lodging/shopping/fun/other）與統計頁、金額欄位四則運算（BigInt 有理數、依幣別小數位四捨五入）、支出列表搜尋與篩選 |
+| P2 | 收據拍照自動填入（使用者確認保留，之後再做）、匯出 CSV、虛擬成員 |
 | 保留 | 群組打字記帳（如 `午餐 450 我付 平分`） |
 
 ## 意見回饋

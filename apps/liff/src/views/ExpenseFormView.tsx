@@ -1,8 +1,10 @@
-import { decimalsOf, formatMoney, SUPPORTED_CURRENCIES } from '@line-split/core';
+import { formatMoney, SUPPORTED_CURRENCIES } from '@line-split/core';
 import { useEffect, useMemo, useState } from 'react';
+import { AmountInput } from '../AmountInput';
 import { errorMessage } from '../api';
 import { navigate, type ViewProps } from '../App';
 import { Avatar, Money, TopBar } from '../components';
+import { CATEGORY_META, EXPENSE_CATEGORIES } from '../lib/categories';
 import { emptyForm, formFromExpense, toPayload, validate, type ExpenseForm } from '../lib/form';
 
 const SPLIT_TABS = [
@@ -137,6 +139,24 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
           </label>
 
           <div className="field">
+            <span>分類</span>
+            <div className="chips wrap" role="radiogroup" aria-label="分類">
+              {EXPENSE_CATEGORIES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.category === c}
+                  className={`chip ${form.category === c ? 'active' : ''}`}
+                  onClick={() => set({ category: form.category === c ? null : c })}
+                >
+                  {CATEGORY_META[c].emoji} {CATEGORY_META[c].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
             <span>金額</span>
             <div className="amount-row">
               <select
@@ -150,12 +170,13 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                   </option>
                 ))}
               </select>
-              <input
-                inputMode={decimalsOf(form.currency) === 0 ? 'numeric' : 'decimal'}
+              <AmountInput
                 value={form.amount}
-                onChange={(e) => set({ amount: e.target.value })}
-                placeholder="0"
+                onChange={(amount) => set({ amount })}
+                currency={form.currency}
                 className="amount-input"
+                ariaLabel="金額"
+                withKeys={!readOnly}
               />
             </div>
           </div>
@@ -204,13 +225,12 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                       <Avatar member={m} size={28} />
                       <span>{m.displayName}</span>
                     </span>
-                    <input
+                    <AmountInput
                       className="exact-input"
-                      inputMode={decimalsOf(form.currency) === 0 ? 'numeric' : 'decimal'}
                       value={form.payerAmounts[m.id] ?? ''}
-                      onChange={(e) => set({ payerAmounts: { ...form.payerAmounts, [m.id]: e.target.value } })}
-                      placeholder="0"
-                      aria-label={`${m.displayName} 付的金額`}
+                      onChange={(v) => setForm((f) => ({ ...f, payerAmounts: { ...f.payerAmounts, [m.id]: v } }))}
+                      currency={form.currency}
+                      ariaLabel={`${m.displayName} 付的金額`}
                     />
                   </li>
                 ))}
@@ -287,13 +307,12 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                     </span>
                   )}
                   {form.splitType === 'exact' && (
-                    <input
+                    <AmountInput
                       className="exact-input"
-                      inputMode={decimalsOf(form.currency) === 0 ? 'numeric' : 'decimal'}
                       value={form.exact[m.id] ?? ''}
-                      onChange={(e) => set({ exact: { ...form.exact, [m.id]: e.target.value } })}
-                      placeholder="0"
-                      aria-label={`${m.displayName} 的金額`}
+                      onChange={(v) => setForm((f) => ({ ...f, exact: { ...f.exact, [m.id]: v } }))}
+                      currency={form.currency}
+                      ariaLabel={`${m.displayName} 的金額`}
                     />
                   )}
                   <span className="split-share">{share ? formatMoney(share.shareMinor, form.currency) : '—'}</span>

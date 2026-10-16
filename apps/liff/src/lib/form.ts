@@ -6,8 +6,10 @@ import {
   parseRate,
   toMinor,
   type ComputedExpense,
+  type ExpenseCategory,
   type Split,
 } from '@line-split/core';
+import { resolveAmount } from './calc';
 import type { Expense, ExpenseBody, Member, SplitType } from '../api';
 
 export interface ExpenseForm {
@@ -25,6 +27,7 @@ export interface ExpenseForm {
   /** yyyy-mm-dd in local time. */
   date: string;
   splitType: SplitType;
+  category: ExpenseCategory | null;
   equalIds: string[];
   weights: Record<string, number>;
   exact: Record<string, string>;
@@ -43,7 +46,6 @@ export function fromDateInput(s: string): number {
   return new Date(y, m - 1, d, 12).getTime();
 }
 
-export const normalizeAmount = (s: string) => s.replace(/[,\s]/g, '');
 
 export function emptyForm(members: Member[], meId: string, baseCurrency: string, now = Date.now()): ExpenseForm {
   return {
@@ -60,6 +62,7 @@ export function emptyForm(members: Member[], meId: string, baseCurrency: string,
     equalIds: members.map((m) => m.id),
     weights: Object.fromEntries(members.map((m) => [m.id, 1])),
     exact: {},
+    category: null,
   };
 }
 
@@ -76,6 +79,7 @@ export function formFromExpense(e: Expense, members: Member[]): ExpenseForm {
         ? Object.fromEntries(e.payers.map((p) => [p.memberId, formatMinor(p.amountMinor, e.currency)]))
         : {},
     splitType: e.splitType,
+    category: (e.category as ExpenseCategory | null) ?? null,
     equalIds: e.splitType === 'equal' ? members.filter((m) => shareOf.has(m.id)).map((m) => m.id) : members.map((m) => m.id),
     weights: Object.fromEntries(
       members.map((m) => [m.id, e.splitType === 'weights' ? (shareOf.get(m.id)?.splitValue ?? 0) : 1]),
@@ -102,7 +106,7 @@ function splitBody(f: ExpenseForm, members: Member[]): ExpenseBody['split'] {
       return {
         type: 'exact',
         items: members
-          .map((m) => ({ memberId: m.id, amount: normalizeAmount(f.exact[m.id] ?? '') }))
+          .map((m) => ({ memberId: m.id, amount: resolveAmount(f.exact[m.id] ?? '', f.currency) }))
           .filter((i) => i.amount !== '' && Number(i.amount) !== 0),
       };
   }
@@ -110,16 +114,17 @@ function splitBody(f: ExpenseForm, members: Member[]): ExpenseBody['split'] {
 
 /** Request body for create/update. The rate is sent only when the user typed it. */
 export function toPayload(f: ExpenseForm, baseCurrency: string, members: Member[]): ExpenseBody {
-  const amount = normalizeAmount(f.amount);
+  const amount = resolveAmount(f.amount, f.currency);
   return {
     title: f.title.trim(),
     currency: f.currency,
     amount,
     ...(f.currency !== baseCurrency && f.fxRateEdited ? { fxRate: f.fxRate.trim() } : {}),
     spentAt: fromDateInput(f.date),
+    category: f.category,
     payers: f.multiPayer
       ? members
-          .map((m) => ({ memberId: m.id, amount: normalizeAmount(f.payerAmounts[m.id] ?? '') }))
+          .map((m) => ({ memberId: m.id, amount: resolveAmount(f.payerAmounts[m.id] ?? '', f.currency) }))
           .filter((p) => p.amount !== '' && Number(p.amount) !== 0)
       : [{ memberId: f.payerId, amount }],
     split: splitBody(f, members),

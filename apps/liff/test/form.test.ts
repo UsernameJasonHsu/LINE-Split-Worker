@@ -44,6 +44,41 @@ describe('toPayload', () => {
   });
 });
 
+describe('calculator and category in the payload', () => {
+  it('evaluates expressions in every amount field', () => {
+    const body = toPayload(
+      form({
+        amount: '1200+300',
+        multiPayer: true,
+        payerAmounts: { a: '500*2', b: '1500-1000' },
+        splitType: 'exact',
+        exact: { a: '1500/2', c: '(500+250)' },
+      }),
+      'TWD',
+      members,
+    );
+    expect(body.amount).toBe('1500');
+    expect(body.payers).toEqual([
+      { memberId: 'a', amount: '1000' },
+      { memberId: 'b', amount: '500' },
+    ]);
+    expect(body.split).toEqual({
+      type: 'exact',
+      items: [
+        { memberId: 'a', amount: '750' },
+        { memberId: 'c', amount: '750' },
+      ],
+    });
+    expect(validate(form({ amount: '1200+300', equalIds: ['a'] }), 'TWD', members).ok).toBe(true);
+    expect(validate(form({ amount: '5/0' }), 'TWD', members)).toMatchObject({ ok: false, error: '請輸入有效金額' });
+  });
+
+  it('sends the category (null when none)', () => {
+    expect(toPayload(form({ amount: '1', category: 'food' }), 'TWD', members).category).toBe('food');
+    expect(toPayload(form({ amount: '1' }), 'TWD', members).category).toBeNull();
+  });
+});
+
 describe('validate', () => {
   it('previews an equal split in base currency', () => {
     const v = validate(form({ amount: '3000', currency: 'JPY', fxRate: '0.2153', equalIds: ['a', 'b'] }), 'TWD', members);

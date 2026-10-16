@@ -1,4 +1,4 @@
-import { SUPPORTED_CURRENCIES } from '@line-split/core';
+import { EXPENSE_CATEGORIES, SUPPORTED_CURRENCIES } from '@line-split/core';
 import { z } from 'zod';
 
 const decimal = z.string().regex(/^\d+(\.\d+)?$/, 'must be a non-negative decimal string');
@@ -25,7 +25,7 @@ export const expenseSchema = z.object({
   /** Omit to use today's auto rate; ignored when currency equals the base currency. */
   fxRate: decimal.optional(),
   spentAt: timestamp.optional(),
-  category: z.string().max(30).nullable().optional(),
+  category: z.enum(EXPENSE_CATEGORIES).nullable().optional(),
   payers: z.array(z.object({ memberId, amount: decimal })).min(1).max(100),
   split,
 });

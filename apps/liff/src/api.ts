@@ -50,6 +50,7 @@ export interface ExpenseBody {
   amount: string;
   fxRate?: string;
   spentAt?: number;
+  category?: string | null;
   payers: { memberId: string; amount: string }[];
   split:
     | { type: 'equal'; memberIds: string[] }

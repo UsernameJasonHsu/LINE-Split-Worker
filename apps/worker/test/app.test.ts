@@ -480,6 +480,21 @@ describe('expenses and settlement flow', () => {
     });
   });
 
+  it('stores a known category and rejects unknown ones', async () => {
+    const { ledgerId, alice } = await setupLedger();
+    const body = {
+      title: '拉麵',
+      currency: 'TWD',
+      amount: '300',
+      payers: [{ memberId: alice, amount: '300' }],
+      split: { type: 'equal', memberIds: [alice] },
+    };
+    const created = await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', { ...body, category: 'food' });
+    expect(created.body.category).toBe('food');
+    expect((await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', { ...body, category: null })).body.category).toBeNull();
+    expect((await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', { ...body, category: 'snacks' })).status).toBe(400);
+  });
+
   it('settles an expense paid by several people', async () => {
     const { ledgerId, alice, bob } = await setupLedger();
     const carol = (await api('POST', `/ledgers/${ledgerId}/join`, 'token-eve')).body.meMemberId as string;

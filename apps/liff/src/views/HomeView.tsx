@@ -1,8 +1,20 @@
+import { useState } from 'react';
 import { navigate, type ViewProps } from '../App';
 import { Avatar, formatDate, memberLookup, Money, TopBar } from '../components';
 import type { Expense } from '../api';
+import { categoryMeta, CATEGORY_META, EXPENSE_CATEGORIES } from '../lib/categories';
+import { DEFAULT_FILTER, filterExpenses, isFilterActive, type ExpenseFilter } from '../lib/filter';
 import { openLedger } from '../liff';
 import { StartNextLedger } from './StartNextLedger';
+
+// Survives navigating to an expense and back (the view remounts).
+let savedFilter: ExpenseFilter = DEFAULT_FILTER;
+
+const SCOPES: { key: ExpenseFilter['scope']; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'mine', label: '與我有關' },
+  { key: 'paidByMe', label: '我付的' },
+];
 
 export function HomeView(props: ViewProps) {
   const { data } = props;
@@ -12,8 +24,13 @@ export function HomeView(props: ViewProps) {
   const myBalance = summary.balances.find((b) => b.memberId === view.meMemberId)?.balanceMinor ?? 0;
   const { closedAt, activeLedgerId } = view.ledger;
 
+  const [filter, setFilterState] = useState(savedFilter);
+  const setFilter = (patch: Partial<ExpenseFilter>) => setFilterState((f) => (savedFilter = { ...f, ...patch }));
+  const filtered = filterExpenses(expenses, filter, view.meMemberId);
+  const filterActive = isFilterActive(filter);
+
   const groups = new Map<string, Expense[]>();
-  for (const e of expenses) {
+  for (const e of filtered) {
     const key = formatDate(e.spentAt);
     groups.set(key, [...(groups.get(key) ?? []), e]);
   }
@@ -63,6 +80,14 @@ export function HomeView(props: ViewProps) {
         </p>
         <p className="muted small">
           總支出 <Money minor={summary.totalSpentMinor} currency={base} /> · {view.members.length} 位成員
+          {expenses.length > 0 && (
+            <>
+              {' · '}
+              <button type="button" className="link-button inline" onClick={() => navigate({ name: 'stats' })}>
+                📊 統計
+              </button>
+            </>
+          )}
         </p>
         {closedAt === null ? (
           <div className="button-row">
@@ -80,8 +105,63 @@ export function HomeView(props: ViewProps) {
         )}
       </section>
 
+      {expenses.length > 0 && (
+        <section className="filter-bar" aria-label="篩選支出">
+          <input
+            type="search"
+            value={filter.query}
+            onChange={(e) => setFilter({ query: e.target.value })}
+            placeholder="🔍 搜尋項目"
+            aria-label="搜尋項目"
+          />
+          <div className="filter-row">
+            <div className="chips" role="radiogroup" aria-label="範圍">
+              {SCOPES.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={filter.scope === s.key}
+                  className={`chip ${filter.scope === s.key ? 'active' : ''}`}
+                  onClick={() => setFilter({ scope: s.key })}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <select
+              className="filter-category"
+              value={filter.category}
+              onChange={(e) => setFilter({ category: e.target.value as ExpenseFilter['category'] })}
+              aria-label="分類"
+            >
+              <option value="all">所有分類</option>
+              {EXPENSE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {CATEGORY_META[c].emoji} {CATEGORY_META[c].label}
+                </option>
+              ))}
+              <option value="none">🧾 未分類</option>
+            </select>
+          </div>
+          {filterActive && (
+            <p className="filter-summary small">
+              <span>
+                {filtered.length} / {expenses.length} 筆 · 合計{' '}
+                <Money minor={filtered.reduce((s, e) => s + e.baseAmountMinor, 0)} currency={base} />
+              </span>
+              <button type="button" className="link-button small" onClick={() => setFilter(DEFAULT_FILTER)}>
+                清除篩選
+              </button>
+            </p>
+          )}
+        </section>
+      )}
+
       {expenses.length === 0 ? (
         <p className="empty">還沒有任何支出，點「新增支出」開始記帳。</p>
+      ) : filtered.length === 0 ? (
+        <p className="empty">沒有符合條件的支出。</p>
       ) : (
         [...groups].map(([date, items]) => (
           <section key={date}>
@@ -95,7 +175,10 @@ export function HomeView(props: ViewProps) {
                     <button type="button" className="list-item" onClick={() => navigate({ name: 'expense', id: e.id })}>
                       <Avatar member={payer && members.get(payer.memberId)} />
                       <span className="list-main">
-                        <span className="list-title">{e.title}</span>
+                        <span className="list-title">
+                          <span aria-label={categoryMeta(e.category).label}>{categoryMeta(e.category).emoji}</span>{' '}
+                          {e.title}
+                        </span>
                         <span className="muted small">
                           {payer ? members.name(payer.memberId) : ''} 付款
                           {e.payers.length > 1 ? ` 等 ${e.payers.length} 人` : ''}

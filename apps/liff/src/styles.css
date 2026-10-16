@@ -841,3 +841,164 @@ textarea:focus {
   font-weight: 600;
   text-decoration: none;
 }
+
+/* Amount calculator */
+.amount-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.calc-preview {
+  color: var(--brand);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-keys {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.calc-keys button {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.calc-keys .calc-equals {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+
+.calc-keys .calc-equals:disabled {
+  opacity: 0.4;
+}
+
+.exact-input + .calc-preview,
+.amount-field:has(.exact-input) {
+  width: 96px;
+}
+
+.amount-field:has(.exact-input) .calc-preview {
+  font-size: 12px;
+}
+
+/* Category chips in the form wrap instead of scrolling */
+.chips.wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+}
+
+/* Home filter */
+.filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.filter-bar input[type='search'] {
+  min-height: 40px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-row .chips {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.filter-category {
+  flex: none;
+  width: auto;
+  min-height: 34px;
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.filter-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0;
+  color: var(--muted);
+}
+
+.link-button.inline {
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Stats */
+.stats-hero p {
+  margin: 0;
+}
+
+.hero-number {
+  font-size: 30px;
+  font-weight: 700;
+  margin: 2px 0 4px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bar-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--brand);
+}
