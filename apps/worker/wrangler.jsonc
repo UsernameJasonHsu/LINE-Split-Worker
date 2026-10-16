@@ -5,6 +5,12 @@
   "compatibility_date": "2026-09-01",
   "observability": { "enabled": true },
   "preview_urls": false,
+  // LIFF front end (apps/liff build output), served same-origin as the API.
+  "assets": {
+    "directory": "../liff/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/webhook", "/webhook/", "/health"]
+  },
   "d1_databases": [
     {
       "binding": "DB",

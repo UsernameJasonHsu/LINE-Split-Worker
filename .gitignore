@@ -4,3 +4,6 @@ dist/
 .dev.vars
 .env
 *.log
+
+# LIFF ID is public config, keep it in git
+!apps/liff/.env

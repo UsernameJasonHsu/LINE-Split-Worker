@@ -233,6 +233,38 @@ describe('expenses and settlement flow', () => {
     ]);
   });
 
+  it('keeps the original rate when an edit omits fxRate and keeps the currency', async () => {
+    const { ledgerId, alice, bob } = await setupLedger();
+    fake.fxRates.USD = { TWD: 32.5 };
+    const body = {
+      title: 'Taxi',
+      currency: 'USD',
+      amount: '10',
+      payers: [{ memberId: alice, amount: '10' }],
+      split: { type: 'equal', memberIds: [alice, bob] },
+    };
+    const created = (await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', body)).body;
+
+    // Rates move (new day / cache cleared); editing the title must not re-price it.
+    await env.DB.prepare('DELETE FROM fx_rates').run();
+    fake.fxRates.USD = { TWD: 40 };
+    const edited = await api('PUT', `/ledgers/${ledgerId}/expenses/${created.id}`, 'token-alice', {
+      ...body,
+      title: 'Taxi to hotel',
+      revision: created.revision,
+    });
+    expect(edited.body).toMatchObject({ fxRate: '32.5', fxSource: 'AUTO', baseAmountMinor: 325 });
+
+    // Changing the currency does fetch a fresh rate.
+    fake.fxRates.EUR = { TWD: 35 };
+    const switched = await api('PUT', `/ledgers/${ledgerId}/expenses/${created.id}`, 'token-alice', {
+      ...body,
+      currency: 'EUR',
+      revision: edited.body.revision,
+    });
+    expect(switched.body).toMatchObject({ fxRate: '35', fxSource: 'AUTO', baseAmountMinor: 350 });
+  });
+
   it('soft-deletes expenses and writes audit logs', async () => {
     const { ledgerId, alice } = await setupLedger();
     const created = (

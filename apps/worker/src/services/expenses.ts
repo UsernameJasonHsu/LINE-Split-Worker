@@ -128,12 +128,17 @@ interface PreparedExpense {
   splitValues: (number | null)[];
 }
 
-/** Resolves the FX rate, converts amounts to minor units and runs the split. */
+/**
+ * Resolves the FX rate, converts amounts to minor units and runs the split.
+ * `previous` is the expense being edited: when the edit keeps its currency and
+ * gives no rate, the original rate is kept rather than re-pricing at today's.
+ */
 async function prepareExpense(
   db: D1Database,
   ledger: LedgerRow,
   members: MemberRow[],
   body: ExpenseBody,
+  previous?: ExpenseDto,
 ): Promise<PreparedExpense> {
   const known = new Set(members.map((m) => m.id));
   const referenced = [
@@ -151,6 +156,9 @@ async function prepareExpense(
   } else if (body.fxRate) {
     fxRate = body.fxRate;
     fxSource = 'MANUAL';
+  } else if (previous && previous.currency === body.currency) {
+    fxRate = previous.fxRate;
+    fxSource = previous.fxSource;
   } else {
     fxRate = (await getFxRate(db, body.currency, ledger.base_currency)).rate;
     fxSource = 'AUTO';
@@ -266,7 +274,7 @@ export async function updateExpense(
 ): Promise<ExpenseDto> {
   const before = await getExpense(db, ledger.id, id);
   if (!before) throw new HttpError(404, 'Expense not found');
-  const { computed, fxSource, splitValues } = await prepareExpense(db, ledger, members, body);
+  const { computed, fxSource, splitValues } = await prepareExpense(db, ledger, members, body, before);
   const newRevision = crypto.randomUUID();
   const guard = { sql: 'EXISTS (SELECT 1 FROM expenses WHERE id = ? AND revision = ?)', params: [id, newRevision] };
 
