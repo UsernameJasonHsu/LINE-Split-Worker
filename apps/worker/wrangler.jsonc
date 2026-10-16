@@ -1,0 +1,22 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "line-split",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "line-split",
+      "database_id": "591d11d7-9d54-4b40-80d0-ca01427735ef",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Not secret. Fill in from LINE Developers Console.
+  // LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN go in .dev.vars and `wrangler secret put`.
+  "vars": {
+    "LINE_LOGIN_CHANNEL_ID": "2012045029",
+    "LIFF_ID": "2012045029-M7BBPLHN"
+  }
+}

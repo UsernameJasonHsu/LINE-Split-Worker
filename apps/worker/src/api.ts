@@ -1,0 +1,166 @@
+import { Hono, type Context } from 'hono';
+import type { z } from 'zod';
+import type { AppEnv } from './env';
+import { HttpError } from './errors';
+import { getFxRate } from './fx';
+import { verifyIdToken } from './line/idToken';
+import {
+  expenseSchema,
+  expenseUpdateSchema,
+  fxQuerySchema,
+  ledgerPatchSchema,
+  settlementSchema,
+} from './schemas';
+import { createExpense, deleteExpense, listExpenses, updateExpense } from './services/expenses';
+import {
+  findLedger,
+  hasLedgerActivity,
+  listMembers,
+  updateLedger,
+  upsertLineMember,
+  type LedgerRow,
+  type MemberRow,
+} from './services/ledgers';
+import { createSettlement, deleteSettlement, getSummary, listSettlements } from './services/settlements';
+
+type Ctx = Context<AppEnv>;
+
+async function parseJson<T extends z.ZodTypeAny>(c: Ctx, schema: T): Promise<z.infer<T>> {
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    throw new HttpError(400, 'Body must be JSON');
+  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    throw new HttpError(400, `${issue.path.join('.') || 'body'}: ${issue.message}`);
+  }
+  return parsed.data;
+}
+
+interface LedgerScope {
+  ledger: LedgerRow;
+  members: MemberRow[];
+  me: MemberRow;
+}
+
+/** Loads the ledger and asserts the caller is a member of it. */
+async function requireMember(c: Ctx): Promise<LedgerScope> {
+  const ledger = await findLedger(c.env.DB, c.req.param('ledgerId')!);
+  if (!ledger) throw new HttpError(404, 'Ledger not found');
+  const members = await listMembers(c.env.DB, ledger.id);
+  const me = members.find((m) => m.line_user_id === c.get('user').lineUserId);
+  if (!me) throw new HttpError(403, 'Not a member of this ledger');
+  return { ledger, members, me };
+}
+
+function ledgerView({ ledger, members, me }: LedgerScope) {
+  return {
+    ledger: {
+      id: ledger.id,
+      name: ledger.name,
+      baseCurrency: ledger.base_currency,
+      archived: ledger.archived_at !== null,
+    },
+    members: members.map((m) => ({
+      id: m.id,
+      displayName: m.display_name,
+      avatarUrl: m.avatar_url,
+      isVirtual: m.is_virtual === 1,
+    })),
+    meMemberId: me.id,
+  };
+}
+
+export const api = new Hono<AppEnv>();
+
+api.use('*', async (c, next) => {
+  const header = c.req.header('Authorization');
+  if (!header?.startsWith('Bearer ')) throw new HttpError(401, 'Missing ID token');
+  const claims = await verifyIdToken(header.slice('Bearer '.length), c.env.LINE_LOGIN_CHANNEL_ID);
+  c.set('user', {
+    lineUserId: claims.sub,
+    displayName: claims.name ?? 'LINE 使用者',
+    pictureUrl: claims.picture ?? null,
+  });
+  await next();
+});
+
+/** Idempotent: anyone holding the ledger link can join. Refreshes name/avatar. */
+api.post('/ledgers/:ledgerId/join', async (c) => {
+  const ledger = await findLedger(c.env.DB, c.req.param('ledgerId'));
+  if (!ledger) throw new HttpError(404, 'Ledger not found');
+  const user = c.get('user');
+  const me = await upsertLineMember(c.env.DB, ledger.id, user.lineUserId, user);
+  const members = await listMembers(c.env.DB, ledger.id);
+  return c.json(ledgerView({ ledger, members, me }));
+});
+
+api.get('/ledgers/:ledgerId', async (c) => c.json(ledgerView(await requireMember(c))));
+
+api.patch('/ledgers/:ledgerId', async (c) => {
+  const scope = await requireMember(c);
+  const patch = await parseJson(c, ledgerPatchSchema);
+  if (
+    patch.baseCurrency &&
+    patch.baseCurrency !== scope.ledger.base_currency &&
+    (await hasLedgerActivity(c.env.DB, scope.ledger.id))
+  ) {
+    throw new HttpError(409, 'Base currency cannot change once expenses or settlements exist');
+  }
+  await updateLedger(c.env.DB, scope.ledger.id, patch);
+  return c.json(ledgerView({ ...scope, ledger: (await findLedger(c.env.DB, scope.ledger.id))! }));
+});
+
+api.get('/ledgers/:ledgerId/expenses', async (c) => {
+  const { ledger } = await requireMember(c);
+  return c.json({ expenses: await listExpenses(c.env.DB, ledger.id) });
+});
+
+api.post('/ledgers/:ledgerId/expenses', async (c) => {
+  const { ledger, members, me } = await requireMember(c);
+  const body = await parseJson(c, expenseSchema);
+  return c.json(await createExpense(c.env.DB, ledger, members, me, body), 201);
+});
+
+api.put('/ledgers/:ledgerId/expenses/:expenseId', async (c) => {
+  const { ledger, members, me } = await requireMember(c);
+  const { revision, ...body } = await parseJson(c, expenseUpdateSchema);
+  return c.json(await updateExpense(c.env.DB, ledger, members, me, c.req.param('expenseId'), revision, body));
+});
+
+api.delete('/ledgers/:ledgerId/expenses/:expenseId', async (c) => {
+  const { ledger, me } = await requireMember(c);
+  await deleteExpense(c.env.DB, ledger, me, c.req.param('expenseId'));
+  return c.body(null, 204);
+});
+
+api.get('/ledgers/:ledgerId/summary', async (c) => {
+  const { ledger, members } = await requireMember(c);
+  return c.json(await getSummary(c.env.DB, ledger, members));
+});
+
+api.get('/ledgers/:ledgerId/settlements', async (c) => {
+  const { ledger } = await requireMember(c);
+  return c.json({ settlements: await listSettlements(c.env.DB, ledger.id) });
+});
+
+api.post('/ledgers/:ledgerId/settlements', async (c) => {
+  const { ledger, members, me } = await requireMember(c);
+  const body = await parseJson(c, settlementSchema);
+  return c.json(await createSettlement(c.env.DB, ledger, members, me, body), 201);
+});
+
+api.delete('/ledgers/:ledgerId/settlements/:settlementId', async (c) => {
+  const { ledger, me } = await requireMember(c);
+  await deleteSettlement(c.env.DB, ledger, me, c.req.param('settlementId'));
+  return c.body(null, 204);
+});
+
+api.get('/fx', async (c) => {
+  const parsed = fxQuerySchema.safeParse(c.req.query());
+  if (!parsed.success) throw new HttpError(400, 'from and to must be supported currencies');
+  return c.json(await getFxRate(c.env.DB, parsed.data.from, parsed.data.to));
+});
