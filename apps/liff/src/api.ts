@@ -5,6 +5,8 @@ export interface Member {
   displayName: string;
   avatarUrl: string | null;
   isVirtual: boolean;
+  /** Self-provided payment details (bank account, LINE Pay, …). */
+  paymentInfo: string | null;
 }
 
 export interface LedgerView {
@@ -115,7 +117,11 @@ export function createApi(getIdToken: () => string | null, ledgerId: string) {
     join: () => request<LedgerView>('POST', `${base}/join`),
     history: async () => (await request<{ ledgers: GroupLedger[] }>('GET', `${base}/history`)).ledgers,
     closeLedger: () => request<LedgerView>('POST', `${base}/close`),
-    startNextLedger: (name: string) => request<LedgerView>('POST', `${base}/next`, { name }),
+    startNextLedger: (name: string, memberIds: string[]) =>
+      request<LedgerView>('POST', `${base}/next`, { name, memberIds }),
+    myPaymentInfo: async () => (await request<{ info: string | null }>('GET', '/api/me/payment-info')).info,
+    setMyPaymentInfo: async (info: string) =>
+      (await request<{ info: string | null }>('PUT', '/api/me/payment-info', { info })).info,
     patchLedger: (patch: { name?: string; baseCurrency?: string }) => request<LedgerView>('PATCH', base, patch),
     expenses: async () => (await request<{ expenses: Expense[] }>('GET', `${base}/expenses`)).expenses,
     createExpense: (body: ExpenseBody) => request<Expense>('POST', `${base}/expenses`, body),

@@ -5,11 +5,12 @@ import { HttpError } from './errors';
 import { getFxRate } from './fx';
 import { verifyIdToken } from './line/idToken';
 import {
-  ledgerNameSchema,
   expenseSchema,
   expenseUpdateSchema,
   fxQuerySchema,
   ledgerPatchSchema,
+  nextLedgerSchema,
+  paymentInfoSchema,
   settlementSchema,
 } from './schemas';
 import { createExpense, deleteExpense, listExpenses, updateExpense } from './services/expenses';
@@ -27,6 +28,7 @@ import {
   type LedgerRow,
   type MemberRow,
 } from './services/ledgers';
+import { getPaymentInfo, setPaymentInfo } from './services/payments';
 import { createSettlement, deleteSettlement, getSummary, listSettlements } from './services/settlements';
 
 type Ctx = Context<AppEnv>;
@@ -86,6 +88,7 @@ async function ledgerView(db: D1Database, { ledger, members, me }: LedgerScope) 
       displayName: m.display_name,
       avatarUrl: m.avatar_url,
       isVirtual: m.is_virtual === 1,
+      paymentInfo: m.payment_info ?? null,
     })),
     meMemberId: me.id,
   };
@@ -138,12 +141,19 @@ api.post('/ledgers/:ledgerId/close', async (c) => {
   return c.json(await ledgerView(c.env.DB, { ...scope, ledger: (await findLedger(c.env.DB, scope.ledger.id))! }));
 });
 
-/** Starts the group's next ledger from this one (members carry over). */
+/** Starts the group's next ledger from this one, carrying over the chosen members. */
 api.post('/ledgers/:ledgerId/next', async (c) => {
-  const { ledger } = await requireMember(c);
-  const { name } = await parseJson(c, ledgerNameSchema);
+  const { ledger, members: previous } = await requireMember(c);
+  const { name, memberIds } = await parseJson(c, nextLedgerSchema);
   if (!ledger.line_group_id) throw new HttpError(409, 'Only group ledgers can start a new ledger');
-  const nextId = await startNextLedger(c.env.DB, ledger, name);
+  const known = new Set(previous.map((m) => m.id));
+  const unknown = memberIds?.find((id) => !known.has(id));
+  if (unknown) throw new HttpError(400, `Unknown member: ${unknown}`);
+
+  const nextId = await startNextLedger(c.env.DB, ledger, name, {
+    memberIds,
+    starterLineUserId: c.get('user').lineUserId,
+  });
   if (!nextId) throw new HttpError(409, 'The group already has an open ledger');
 
   const next = (await findLedger(c.env.DB, nextId))!;
@@ -209,6 +219,14 @@ api.delete('/ledgers/:ledgerId/settlements/:settlementId', async (c) => {
   const { ledger, me } = requireOpen(await requireMember(c));
   await deleteSettlement(c.env.DB, ledger, me, c.req.param('settlementId'));
   return c.body(null, 204);
+});
+
+/** The caller's own payment details; nobody can read or change another user's here. */
+api.get('/me/payment-info', async (c) => c.json({ info: await getPaymentInfo(c.env.DB, c.get('user').lineUserId) }));
+
+api.put('/me/payment-info', async (c) => {
+  const { info } = await parseJson(c, paymentInfoSchema);
+  return c.json({ info: await setPaymentInfo(c.env.DB, c.get('user').lineUserId, info) });
 });
 
 api.get('/fx', async (c) => {

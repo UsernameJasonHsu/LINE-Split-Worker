@@ -420,12 +420,77 @@ describe('expenses and settlement flow', () => {
       expect(JSON.stringify(fake.replies[2]!.messages)).toContain(`?l=${next.ledger.id}`);
     });
 
+    it('carries over only the chosen members, always including the starter', async () => {
+      const { ledgerId, alice } = await closeWithActivity();
+      await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice'); // ensure alice is listed
+      // Bob starts the next ledger choosing only Alice; Bob is added anyway.
+      const next = await api('POST', `/ledgers/${ledgerId}/next`, 'token-bob', { name: '韓國行', memberIds: [alice] });
+      expect(next.status).toBe(201);
+      expect(next.body.members.map((m: any) => m.displayName).sort()).toEqual(['Alice', 'Bob']);
+
+      const { ledgerId: other } = await (async () => {
+        // A fresh closed ledger where Carol was a member but is not chosen.
+        const l = (await api('POST', `/ledgers/${next.body.ledger.id}/join`, 'token-eve')).body;
+        await api('POST', `/ledgers/${l.ledger.id}/close`, 'token-eve');
+        return { ledgerId: l.ledger.id };
+      })();
+      const onlyMe = await api('POST', `/ledgers/${other}/next`, 'token-alice', { name: '泰國', memberIds: [] });
+      expect(onlyMe.body.members.map((m: any) => m.displayName)).toEqual(['Alice']);
+    });
+
+    it('rejects member ids that are not in the previous ledger', async () => {
+      const { ledgerId } = await closeWithActivity();
+      const res = await api('POST', `/ledgers/${ledgerId}/next`, 'token-alice', { name: 'x', memberIds: ['ghost'] });
+      expect(res.status).toBe(400);
+      expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM ledgers').first<{ n: number }>())!.n).toBe(1);
+    });
+
     it('rejects a blank name and renames an open ledger', async () => {
       const { ledgerId } = await closeWithActivity();
       expect((await api('POST', `/ledgers/${ledgerId}/next`, 'token-alice', { name: '  ' })).status).toBe(400);
       const next = (await api('POST', `/ledgers/${ledgerId}/next`, 'token-alice', { name: '未命名' })).body;
       const renamed = await api('PATCH', `/ledgers/${next.ledger.id}`, 'token-alice', { name: '韓國行' });
       expect(renamed.body.ledger.name).toBe('韓國行');
+    });
+  });
+
+  it('settles an expense paid by several people', async () => {
+    const { ledgerId, alice, bob } = await setupLedger();
+    const carol = (await api('POST', `/ledgers/${ledgerId}/join`, 'token-eve')).body.meMemberId as string;
+    const created = await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', {
+      title: '飯店',
+      currency: 'TWD',
+      amount: '9000',
+      payers: [
+        { memberId: alice, amount: '6000' },
+        { memberId: bob, amount: '3000' },
+      ],
+      split: { type: 'equal', memberIds: [alice, bob, carol] },
+    });
+    expect(created.status).toBe(201);
+    // alice +6000-3000 = +3000, bob 0, carol -3000
+    const summary = (await api('GET', `/ledgers/${ledgerId}/summary`, 'token-alice')).body;
+    expect(summary.transfers).toEqual([{ from: carol, to: alice, amountMinor: 3000 }]);
+  });
+
+  describe('payment info', () => {
+    it('is set by the user and shown to fellow members in every ledger', async () => {
+      const { ledgerId } = await setupLedger();
+      const saved = await api('PUT', '/me/payment-info', 'token-bob', { info: ' 中信 822-123456789 ' });
+      expect(saved.body).toEqual({ info: '中信 822-123456789' });
+
+      const members = (await api('GET', `/ledgers/${ledgerId}`, 'token-alice')).body.members;
+      expect(members.find((m: any) => m.displayName === 'Bob').paymentInfo).toBe('中信 822-123456789');
+      expect(members.find((m: any) => m.displayName === 'Alice').paymentInfo).toBeNull();
+      expect((await api('GET', '/me/payment-info', 'token-bob')).body).toEqual({ info: '中信 822-123456789' });
+    });
+
+    it('clears when empty and validates length', async () => {
+      await api('PUT', '/me/payment-info', 'token-bob', { info: 'x' });
+      expect((await api('PUT', '/me/payment-info', 'token-bob', { info: '  ' })).body).toEqual({ info: null });
+      expect((await api('GET', '/me/payment-info', 'token-bob')).body).toEqual({ info: null });
+      expect((await api('PUT', '/me/payment-info', 'token-bob', { info: 'x'.repeat(201) })).status).toBe(400);
+      expect((await api('PUT', '/me/payment-info', undefined, { info: 'x' })).status).toBe(401);
     });
   });
 

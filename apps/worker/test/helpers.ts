@@ -13,7 +13,7 @@ export const TEST_ENV = {
   LIFF_ID: '2000000000-TestLiff',
 };
 
-const TABLES = ['audit_logs', 'fx_rates', 'settlements', 'expense_shares', 'expense_payers', 'expenses', 'members', 'ledgers'];
+const TABLES = ['payment_profiles', 'audit_logs', 'fx_rates', 'settlements', 'expense_shares', 'expense_payers', 'expenses', 'members', 'ledgers'];
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'migrations');
 export const MIGRATIONS = readdirSync(MIGRATIONS_DIR).sort();

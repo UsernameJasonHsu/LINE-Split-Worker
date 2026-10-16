@@ -17,7 +17,11 @@ export interface ExpenseForm {
   fxRate: string;
   /** True once the user typed a rate; only then is it sent (as MANUAL). */
   fxRateEdited: boolean;
+  /** Single payer (when `multiPayer` is false). */
   payerId: string;
+  multiPayer: boolean;
+  /** Amount paid per member when `multiPayer` is true. */
+  payerAmounts: Record<string, string>;
   /** yyyy-mm-dd in local time. */
   date: string;
   splitType: SplitType;
@@ -49,6 +53,8 @@ export function emptyForm(members: Member[], meId: string, baseCurrency: string,
     fxRate: '1',
     fxRateEdited: false,
     payerId: meId,
+    multiPayer: false,
+    payerAmounts: {},
     date: toDateInput(now),
     splitType: 'equal',
     equalIds: members.map((m) => m.id),
@@ -64,6 +70,11 @@ export function formFromExpense(e: Expense, members: Member[]): ExpenseForm {
     title: e.title,
     amount: formatMinor(e.amountMinor, e.currency),
     fxRate: e.fxRate,
+    multiPayer: e.payers.length > 1,
+    payerAmounts:
+      e.payers.length > 1
+        ? Object.fromEntries(e.payers.map((p) => [p.memberId, formatMinor(p.amountMinor, e.currency)]))
+        : {},
     splitType: e.splitType,
     equalIds: e.splitType === 'equal' ? members.filter((m) => shareOf.has(m.id)).map((m) => m.id) : members.map((m) => m.id),
     weights: Object.fromEntries(
@@ -106,7 +117,11 @@ export function toPayload(f: ExpenseForm, baseCurrency: string, members: Member[
     amount,
     ...(f.currency !== baseCurrency && f.fxRateEdited ? { fxRate: f.fxRate.trim() } : {}),
     spentAt: fromDateInput(f.date),
-    payers: [{ memberId: f.payerId, amount }],
+    payers: f.multiPayer
+      ? members
+          .map((m) => ({ memberId: m.id, amount: normalizeAmount(f.payerAmounts[m.id] ?? '') }))
+          .filter((p) => p.amount !== '' && Number(p.amount) !== 0)
+      : [{ memberId: f.payerId, amount }],
     split: splitBody(f, members),
   };
 }
@@ -123,16 +138,42 @@ function parseAmount(s: string, currency: string): number | string {
   }
 }
 
-export type Validation = { ok: true; computed: ComputedExpense } | { ok: false; error: string };
+/**
+ * Parses per-member amounts that must add up to `total`. Returns the parsed
+ * parts or an error explaining what is missing / over.
+ */
+function parseParts(
+  parts: { memberId: string; amount: string }[],
+  total: number,
+  currency: string,
+  messages: { short: (money: string) => string; over: (money: string) => string },
+): { memberId: string; amountMinor: number }[] | string {
+  const parsed: { memberId: string; amountMinor: number }[] = [];
+  for (const p of parts) {
+    const minor = parseAmount(p.amount, currency);
+    if (typeof minor === 'string') return minor;
+    parsed.push({ memberId: p.memberId, amountMinor: minor });
+  }
+  const diff = total - parsed.reduce((s, p) => s + p.amountMinor, 0);
+  if (diff > 0) return messages.short(formatMoney(diff, currency));
+  if (diff < 0) return messages.over(formatMoney(-diff, currency));
+  return parsed;
+}
+
+export type ValidationField = 'amount' | 'fx' | 'payers' | 'split';
+
+export type Validation =
+  | { ok: true; computed: ComputedExpense }
+  | { ok: false; error: string; field: ValidationField };
 
 /** Live validation and preview of how the expense will be split. */
 export function validate(f: ExpenseForm, baseCurrency: string, members: Member[]): Validation {
-  const fail = (error: string): Validation => ({ ok: false, error });
+  const fail = (error: string, field: ValidationField): Validation => ({ ok: false, error, field });
   const body = toPayload(f, baseCurrency, members);
 
   const amountMinor = parseAmount(body.amount, f.currency);
-  if (typeof amountMinor === 'string') return fail(body.amount ? amountMinor : '請輸入金額');
-  if (amountMinor <= 0) return fail('金額必須大於 0');
+  if (typeof amountMinor === 'string') return fail(body.amount ? amountMinor : '請輸入金額', 'amount');
+  if (amountMinor <= 0) return fail('金額必須大於 0', 'amount');
 
   let fxRate = '1';
   if (f.currency !== baseCurrency) {
@@ -140,33 +181,34 @@ export function validate(f: ExpenseForm, baseCurrency: string, members: Member[]
     try {
       parseRate(fxRate);
     } catch {
-      return fail('請輸入有效匯率');
+      return fail('請輸入有效匯率', 'fx');
     }
+  }
+
+  let payers: { memberId: string; amountMinor: number }[] = [{ memberId: f.payerId, amountMinor }];
+  if (f.multiPayer) {
+    if (body.payers.length === 0) return fail('請輸入各付款人的金額', 'payers');
+    const parsed = parseParts(body.payers, amountMinor, f.currency, {
+      short: (m) => `付款還差 ${m}`,
+      over: (m) => `付款超出總額 ${m}`,
+    });
+    if (typeof parsed === 'string') return fail(parsed, 'payers');
+    payers = parsed;
   }
 
   let split: Split;
   if (body.split.type === 'exact') {
-    const items: { memberId: string; amountMinor: number }[] = [];
-    for (const i of body.split.items) {
-      const minor = parseAmount(i.amount, f.currency);
-      if (typeof minor === 'string') return fail(minor);
-      items.push({ memberId: i.memberId, amountMinor: minor });
-    }
-    const sum = items.reduce((s, i) => s + i.amountMinor, 0);
-    if (sum !== amountMinor) {
-      const diff = amountMinor - sum;
-      return fail(
-        diff > 0
-          ? `還有 ${formatMoney(diff, f.currency)} 未分配`
-          : `超出總額 ${formatMoney(-diff, f.currency)}`,
-      );
-    }
+    const items = parseParts(body.split.items, amountMinor, f.currency, {
+      short: (m) => `還有 ${m} 未分配`,
+      over: (m) => `超出總額 ${m}`,
+    });
+    if (typeof items === 'string') return fail(items, 'split');
     split = { type: 'exact', items };
   } else {
     split = body.split;
   }
   const empty = split.type === 'equal' ? split.memberIds.length === 0 : split.items.length === 0;
-  if (empty) return fail('請至少選擇一位分攤成員');
+  if (empty) return fail('請至少選擇一位分攤成員', 'split');
 
   try {
     return {
@@ -176,11 +218,11 @@ export function validate(f: ExpenseForm, baseCurrency: string, members: Member[]
         amountMinor,
         fxRate,
         baseCurrency,
-        payers: [{ memberId: f.payerId, amountMinor }],
+        payers,
         split,
       }),
     };
   } catch (err) {
-    return fail((err as Error).message);
+    return fail((err as Error).message, 'split');
   }
 }

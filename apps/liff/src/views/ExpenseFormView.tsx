@@ -106,6 +106,15 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
     set({ equalIds: form.equalIds.includes(id) ? form.equalIds.filter((x) => x !== id) : [...form.equalIds, id] });
   const allSelected = form.equalIds.length === members.length;
 
+  // Switching to several payers starts from "the single payer paid everything".
+  const togglePayerMode = () =>
+    form.multiPayer
+      ? set({
+          multiPayer: false,
+          payerId: members.find((m) => (form.payerAmounts[m.id] ?? '').trim() !== '')?.id ?? form.payerId,
+        })
+      : set({ multiPayer: true, payerAmounts: { [form.payerId]: form.amount } });
+
   return (
     <main className={readOnly ? 'page' : 'page with-footer'}>
       <TopBar
@@ -171,9 +180,42 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
             </label>
           )}
 
-          <div className="field-row">
-            <label className="field">
+          <label className="field">
+            <span>日期</span>
+            <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
+          </label>
+        </section>
+
+        <section className="card form">
+          <div className="field">
+            <span className="field-head">
               <span>付款人</span>
+              {!readOnly && (
+                <button type="button" className="link-button" onClick={togglePayerMode}>
+                  {form.multiPayer ? '改回單人付款' : '多人付款'}
+                </button>
+              )}
+            </span>
+            {form.multiPayer ? (
+              <ul className="list">
+                {members.map((m) => (
+                  <li key={m.id} className="split-row">
+                    <span className="split-label">
+                      <Avatar member={m} size={28} />
+                      <span>{m.displayName}</span>
+                    </span>
+                    <input
+                      className="exact-input"
+                      inputMode={decimalsOf(form.currency) === 0 ? 'numeric' : 'decimal'}
+                      value={form.payerAmounts[m.id] ?? ''}
+                      onChange={(e) => set({ payerAmounts: { ...form.payerAmounts, [m.id]: e.target.value } })}
+                      placeholder="0"
+                      aria-label={`${m.displayName} 付的金額`}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : (
               <select value={form.payerId} onChange={(e) => set({ payerId: e.target.value })}>
                 {members.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -182,15 +224,11 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="field">
-              <span>日期</span>
-              <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
-            </label>
+            )}
+            {!validation.ok && validation.field === 'payers' && (showErrors || form.amount !== '') && (
+              <p className="error">{validation.error}</p>
+            )}
           </div>
-          {existing && existing.payers.length > 1 && (
-            <small className="muted">此筆原本有多位付款人，儲存後會改為單一付款人。</small>
-          )}
         </section>
 
         <section className="card form">
@@ -263,7 +301,9 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
               );
             })}
           </ul>
-          {!validation.ok && (showErrors || form.amount !== '') && <p className="error">{validation.error}</p>}
+          {!validation.ok && validation.field !== 'payers' && (showErrors || form.amount !== '') && (
+            <p className="error">{validation.error}</p>
+          )}
         </section>
       </fieldset>
 

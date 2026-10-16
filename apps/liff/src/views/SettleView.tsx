@@ -1,5 +1,5 @@
 import { formatMinor, formatMoney, SUPPORTED_CURRENCIES, type Transfer } from '@line-split/core';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { errorMessage } from '../api';
 import { navigate, type ViewProps } from '../App';
 import { Avatar, formatDate, memberLookup, Money, TopBar } from '../components';
@@ -42,11 +42,15 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
         : summary.transfers.map(
             (t) => `・${members.name(t.from)} → ${members.name(t.to)}  ${formatMoney(t.amountMinor, base)}`,
           );
+    const payees = [...new Set(summary.transfers.map((t) => t.to))]
+      .map((id) => members.get(id))
+      .filter((m) => m?.paymentInfo);
     const text = [
       `📒 ${view.ledger.name} 結算`,
       `總支出 ${formatMoney(summary.totalSpentMinor, base)}`,
       '',
       ...lines,
+      ...(payees.length ? ['', '收款資訊：', ...payees.map((m) => `・${m!.displayName}：${m!.paymentInfo}`)] : []),
       '',
       `查看明細：${ledgerLink(view.ledger.id)}`,
     ].join('\n');
@@ -96,6 +100,7 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
                     {members.name(t.from)} → {members.name(t.to)}
                   </span>
                   <Money minor={t.amountMinor} currency={base} />
+                  <PaymentInfoLine info={members.get(t.to)?.paymentInfo ?? null} notify={notify} />
                 </span>
                 {!closed && (
                   <button type="button" className="button small" disabled={busy} onClick={() => markPaid(t)}>
@@ -110,6 +115,9 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
           發送結算到聊天室
         </button>
       </section>
+
+      <h2 className="section-title">我的收款資訊</h2>
+      <PaymentInfoEditor api={api} notify={notify} reload={reload} />
 
       <h2 className="section-title">各成員餘額</h2>
       <ul className="list card">
@@ -210,5 +218,88 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
         </>
       )}
     </main>
+  );
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Some in-app browsers block the clipboard API; let the user copy manually.
+    window.prompt('請長按複製', text);
+    return false;
+  }
+}
+
+function PaymentInfoLine({ info, notify }: { info: string | null; notify: (m: string) => void }) {
+  if (!info) return null;
+  return (
+    <span className="payment-info">
+      <span className="small">收款：{info}</span>
+      <button
+        type="button"
+        className="link-button small"
+        onClick={async () => (await copyText(info)) && notify('已複製收款資訊')}
+      >
+        複製
+      </button>
+    </span>
+  );
+}
+
+function PaymentInfoEditor({ api, notify, reload }: Pick<ViewProps, 'api' | 'notify' | 'reload'>) {
+  const [info, setInfo] = useState<string | null>(null);
+  const [saved, setSaved] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .myPaymentInfo()
+      .then((v) => {
+        setInfo(v ?? '');
+        setSaved(v ?? '');
+      })
+      .catch((err) => notify(errorMessage(err)));
+  }, [api, notify]);
+
+  async function save() {
+    if (info === null) return;
+    setBusy(true);
+    try {
+      const v = (await api.setMyPaymentInfo(info)) ?? '';
+      setInfo(v);
+      setSaved(v);
+      await reload();
+      notify(v ? '已儲存收款資訊' : '已清除收款資訊');
+    } catch (err) {
+      notify(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card form">
+      <p className="muted small">
+        讓別人還錢時知道要轉到哪裡，例如銀行帳號或 LINE Pay。只有和你同帳本的成員看得到，會套用到你所有的帳本。
+      </p>
+      <textarea
+        value={info ?? ''}
+        disabled={info === null}
+        onChange={(e) => setInfo(e.target.value)}
+        placeholder={'例如：\n中國信託 (822) 1234-5678-9012\nLINE Pay：0912-345-678'}
+        maxLength={200}
+        rows={3}
+      />
+      <button
+        type="button"
+        className="button block"
+        disabled={busy || info === null || info.trim() === saved.trim()}
+        onClick={save}
+      >
+        儲存
+      </button>
+    </section>
   );
 }

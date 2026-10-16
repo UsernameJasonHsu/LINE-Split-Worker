@@ -20,6 +20,8 @@ export interface MemberRow {
   avatar_url: string | null;
   is_virtual: number;
   joined_at: number;
+  /** From payment_profiles; only present when loaded via listMembers. */
+  payment_info?: string | null;
 }
 
 export function findLedger(db: D1Database, id: string): Promise<LedgerRow | null> {
@@ -85,13 +87,20 @@ export async function closeLedger(db: D1Database, ledgerId: string): Promise<boo
 }
 
 /**
- * Opens a new ledger for `previous`'s group, copying its members and base
- * currency. The partial unique index allows one open ledger per group, so the
- * insert is a no-op when one already exists (including a concurrent start);
- * the member copy is guarded on the new ledger existing. Returns the new
- * ledger id, or null if the group already has an open ledger.
+ * Opens a new ledger for `previous`'s group with its base currency, copying
+ * the chosen members (all when `memberIds` is undefined) plus the starter.
+ * The partial unique index allows one open ledger per group, so the insert is
+ * a no-op when one already exists (including a concurrent start); the member
+ * copy is guarded on the new ledger existing. Returns the new ledger id, or
+ * null if the group already has an open ledger.
  */
-export async function startNextLedger(db: D1Database, previous: LedgerRow, name: string): Promise<string | null> {
+export async function startNextLedger(
+  db: D1Database,
+  previous: LedgerRow,
+  name: string,
+  carry: { memberIds?: string[]; starterLineUserId: string },
+): Promise<string | null> {
+  const chosen = carry.memberIds ? JSON.stringify(carry.memberIds) : null;
   const nextId = crypto.randomUUID();
   const created = 'EXISTS (SELECT 1 FROM ledgers WHERE id = ?)';
   const [inserted] = await db.batch([
@@ -107,9 +116,12 @@ export async function startNextLedger(db: D1Database, previous: LedgerRow, name:
       .prepare(
         `INSERT INTO members (id, ledger_id, line_user_id, display_name, avatar_url, is_virtual, joined_at)
          SELECT lower(hex(randomblob(16))), ?, line_user_id, display_name, avatar_url, is_virtual, joined_at
-         FROM members WHERE ledger_id = ? AND ${created}`,
+         FROM members
+         WHERE ledger_id = ?
+           AND (? IS NULL OR id IN (SELECT value FROM json_each(?)) OR line_user_id = ?)
+           AND ${created}`,
       )
-      .bind(nextId, previous.id, nextId),
+      .bind(nextId, previous.id, chosen, chosen, carry.starterLineUserId, nextId),
     db.prepare(`UPDATE ledgers SET successor_id = ? WHERE id = ? AND ${created}`).bind(nextId, previous.id, nextId),
   ]);
   return inserted!.meta.changes === 0 ? null : nextId;
@@ -184,7 +196,11 @@ export async function updateLedger(
 
 export async function listMembers(db: D1Database, ledgerId: string): Promise<MemberRow[]> {
   const { results } = await db
-    .prepare('SELECT * FROM members WHERE ledger_id = ? ORDER BY joined_at, id')
+    .prepare(
+      `SELECT m.*, p.info AS payment_info FROM members m
+       LEFT JOIN payment_profiles p ON p.line_user_id = m.line_user_id
+       WHERE m.ledger_id = ? ORDER BY m.joined_at, m.id`,
+    )
     .bind(ledgerId)
     .all<MemberRow>();
   return results;

@@ -3,9 +3,9 @@ import type { Expense, Member } from '../src/api';
 import { emptyForm, formFromExpense, fromDateInput, toDateInput, toPayload, validate } from '../src/lib/form';
 
 const members: Member[] = [
-  { id: 'a', displayName: 'Alice', avatarUrl: null, isVirtual: false },
-  { id: 'b', displayName: 'Bob', avatarUrl: null, isVirtual: false },
-  { id: 'c', displayName: 'Cara', avatarUrl: null, isVirtual: false },
+  { id: 'a', displayName: 'Alice', avatarUrl: null, isVirtual: false, paymentInfo: null },
+  { id: 'b', displayName: 'Bob', avatarUrl: null, isVirtual: false, paymentInfo: null },
+  { id: 'c', displayName: 'Cara', avatarUrl: null, isVirtual: false, paymentInfo: null },
 ];
 const form = (patch = {}) => ({ ...emptyForm(members, 'a', 'TWD', Date.UTC(2026, 9, 16, 4)), title: '晚餐', ...patch });
 
@@ -65,6 +65,61 @@ describe('validate', () => {
     expect(err({ amount: '10', splitType: 'weights', weights: { a: 0, b: 0, c: 0 } })).toBe('請至少選擇一位分攤成員');
     expect(err({ amount: '100', splitType: 'exact', exact: { a: '30', b: '50' } })).toBe('還有 TWD 20 未分配');
     expect(err({ amount: '100', splitType: 'exact', exact: { a: '80', b: '50' } })).toBe('超出總額 TWD 30');
+  });
+});
+
+describe('multiple payers', () => {
+  const multi = (payerAmounts: Record<string, string>, amount = '9000') =>
+    form({ amount, multiPayer: true, payerAmounts, equalIds: ['a', 'b', 'c'] });
+
+  it('sends each non-empty payer amount in member order', () => {
+    expect(toPayload(multi({ c: '3,000', a: '6000', b: '' }), 'TWD', members).payers).toEqual([
+      { memberId: 'a', amount: '6000' },
+      { memberId: 'c', amount: '3000' },
+    ]);
+  });
+
+  it('previews the computed payers', () => {
+    const v = validate(multi({ a: '6000', b: '3000' }), 'TWD', members);
+    expect(v.ok && v.computed.payers.map((p) => [p.memberId, p.amountMinor])).toEqual([
+      ['a', 6000],
+      ['b', 3000],
+    ]);
+  });
+
+  it('explains payer totals that do not match', () => {
+    const err = (payerAmounts: Record<string, string>) => {
+      const v = validate(multi(payerAmounts), 'TWD', members);
+      return v.ok ? null : v.error;
+    };
+    expect(err({})).toBe('請輸入各付款人的金額');
+    expect(err({ a: '6000' })).toBe('付款還差 TWD 3,000');
+    expect(err({ a: '6000', b: '4000' })).toBe('付款超出總額 TWD 1,000');
+    expect(err({ a: '60.5' })).toBe('TWD 不能有小數');
+  });
+
+  it('round-trips an expense with several payers', () => {
+    const f = formFromExpense(
+      {
+        splitType: 'equal',
+        currency: 'TWD',
+        amountMinor: 9000,
+        fxRate: '1',
+        spentAt: 0,
+        title: '飯店',
+        payers: [
+          { memberId: 'a', amountMinor: 6000, baseAmountMinor: 6000 },
+          { memberId: 'b', amountMinor: 3000, baseAmountMinor: 3000 },
+        ],
+        shares: [{ memberId: 'a', splitValue: null, shareMinor: 9000, baseShareMinor: 9000 }],
+      } as Expense,
+      members,
+    );
+    expect(f).toMatchObject({ multiPayer: true, payerAmounts: { a: '6000', b: '3000' } });
+    expect(formFromExpense({ ...({} as Expense), splitType: 'equal', currency: 'TWD', amountMinor: 1, fxRate: '1', spentAt: 0, title: 'x', payers: [{ memberId: 'b', amountMinor: 1, baseAmountMinor: 1 }], shares: [] }, members)).toMatchObject({
+      multiPayer: false,
+      payerId: 'b',
+    });
   });
 });
 

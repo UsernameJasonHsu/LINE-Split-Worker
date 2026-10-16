@@ -47,6 +47,15 @@ export const ledgerPatchSchema = z.object({
   baseCurrency: currency.optional(),
 });
 
-export const ledgerNameSchema = z.object({ name: z.string().trim().min(1).max(50) });
+export const nextLedgerSchema = z.object({
+  name: z.string().trim().min(1).max(50),
+  /** Members of the previous ledger to carry over; omit for everyone. The starter is always included. */
+  memberIds: z.array(memberId).max(100).optional(),
+});
+
+export const paymentInfoSchema = z.object({
+  /** Free text such as a bank account or LINE Pay handle; empty clears it. */
+  info: z.string().trim().max(200),
+});
 
 export const fxQuerySchema = z.object({ from: currency, to: currency });
