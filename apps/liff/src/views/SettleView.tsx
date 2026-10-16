@@ -63,12 +63,11 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
 
   const hasActivity = expenses.length > 0 || settlements.length > 0;
 
+  const unsettled = summary.transfers.length;
+
   const closeLedger = () => {
-    const pending = summary.transfers.length;
-    const warning = pending
-      ? `還有 ${pending} 筆款項尚未結清，結束後無法再標記已付（紀錄仍可查看）。\n\n確定結束「${view.ledger.name}」？`
-      : `結束「${view.ledger.name}」？\n帳本會保留為唯讀，之後可隨時開新帳本。`;
-    if (!window.confirm(warning)) return;
+    if (unsettled > 0) return;
+    if (!window.confirm(`結束「${view.ledger.name}」？\n帳本會保留為唯讀，之後可隨時開新帳本。`)) return;
     void run(async () => {
       await api.closeLedger();
       await trySendToChat(`📒 「${view.ledger.name}」已結束。\n下次要記帳時，在群組輸入「帳本」即可開新帳本。`);
@@ -211,9 +210,19 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
             <p className="muted small">
               旅程或活動結束後可以結束帳本，帳本會保留為唯讀，可從首頁右上角「☰」查看。等確定下一次的主題再開新帳本，成員會自動帶入。
             </p>
-            <button type="button" className="button danger block" disabled={busy} onClick={closeLedger}>
+            <button
+              type="button"
+              className="button danger block"
+              disabled={busy || unsettled > 0}
+              onClick={closeLedger}
+            >
               結束這本帳本
             </button>
+            {unsettled > 0 && (
+              <small className="muted">
+                還有 {unsettled} 筆款項未結清。請在上方「建議轉帳」全部標記已付後，才能結束帳本。
+              </small>
+            )}
           </section>
         </>
       )}

@@ -317,9 +317,33 @@ describe('expenses and settlement flow', () => {
         payers: [{ memberId: alice, amount: '600' }],
         split: { type: 'equal', memberIds: [alice, bob] },
       });
+      // Ledgers can only be closed once everyone is settled.
+      await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', { fromMemberId: bob, toMemberId: alice, amount: '300' });
       const closed = await api('POST', `/ledgers/${ledgerId}/close`, 'token-bob');
       return { ledgerId, alice, bob, closed };
     }
+
+    it('refuses to close while balances are unsettled', async () => {
+      const { ledgerId, alice, bob } = await setupLedger();
+      await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', {
+        title: '拉麵',
+        currency: 'TWD',
+        amount: '601',
+        payers: [{ memberId: alice, amount: '601' }],
+        // The remainder goes to the first member, so Bob owes 301.
+        split: { type: 'equal', memberIds: [bob, alice] },
+      });
+      const refused = await api('POST', `/ledgers/${ledgerId}/close`, 'token-alice');
+      expect(refused.status).toBe(409);
+      expect(refused.body.error).toMatch(/unsettled/i);
+      expect((await api('GET', `/ledgers/${ledgerId}`, 'token-alice')).body.ledger.closedAt).toBeNull();
+
+      // Even a 1-dollar rounding remainder must be settled first.
+      await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', { fromMemberId: bob, toMemberId: alice, amount: '300' });
+      expect((await api('POST', `/ledgers/${ledgerId}/close`, 'token-alice')).status).toBe(409);
+      await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', { fromMemberId: bob, toMemberId: alice, amount: '1' });
+      expect((await api('POST', `/ledgers/${ledgerId}/close`, 'token-alice')).status).toBe(200);
+    });
 
     const sendText = (text: string) =>
       callApp(
@@ -331,8 +355,10 @@ describe('expenses and settlement flow', () => {
       const { ledgerId, closed } = await closeWithActivity();
       expect(closed.status).toBe(200);
       expect(closed.body.ledger).toMatchObject({ id: ledgerId, closedAt: expect.any(Number), activeLedgerId: null });
-      // History, including the unsettled balance, stays readable.
-      expect((await api('GET', `/ledgers/${ledgerId}/summary`, 'token-alice')).body.transfers).toHaveLength(1);
+      // History stays readable.
+      const summary = (await api('GET', `/ledgers/${ledgerId}/summary`, 'token-alice')).body;
+      expect(summary).toMatchObject({ totalSpentMinor: 600, transfers: [] });
+      expect((await api('GET', `/ledgers/${ledgerId}/settlements`, 'token-alice')).body.settlements).toHaveLength(1);
     });
 
     it('starts the next ledger later, carrying over members', async () => {

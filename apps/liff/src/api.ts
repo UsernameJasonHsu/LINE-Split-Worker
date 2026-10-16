@@ -147,6 +147,7 @@ export function errorMessage(err: unknown): string {
     if (err.status === 401) return '登入已過期，請關閉後重新開啟帳本';
     if (err.status === 403) return '你不是這個帳本的成員';
     if (err.status === 404) return '找不到資料，可能已被刪除';
+    if (err.status === 409 && /unsettled/i.test(err.message)) return '還有款項未結清，請先全部標記已付再結束帳本';
     if (err.status === 409 && /closed/i.test(err.message)) return '這本帳本已結束，無法修改';
     if (err.status === 409 && /open ledger/i.test(err.message)) return '群組已有進行中的帳本，請重新整理';
     if (err.status === 409) return '資料已被其他人修改，請重新整理後再試';

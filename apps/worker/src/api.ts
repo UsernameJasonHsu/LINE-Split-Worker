@@ -134,9 +134,17 @@ api.get('/ledgers/:ledgerId/history', async (c) => {
   return c.json({ ledgers });
 });
 
-/** Finishes this ledger; it becomes read-only. A new one is started separately. */
+/**
+ * Finishes this ledger; it becomes read-only. Only allowed once everyone is
+ * settled, since a closed ledger can no longer record repayments. A new
+ * ledger is started separately.
+ */
 api.post('/ledgers/:ledgerId/close', async (c) => {
   const scope = requireOpen(await requireMember(c));
+  const { transfers } = await getSummary(c.env.DB, scope.ledger, scope.members);
+  if (transfers.length > 0) {
+    throw new HttpError(409, `Ledger has ${transfers.length} unsettled transfer(s); settle up before closing`);
+  }
   if (!(await closeLedger(c.env.DB, scope.ledger.id))) throw new HttpError(409, 'This ledger is closed and read-only');
   return c.json(await ledgerView(c.env.DB, { ...scope, ledger: (await findLedger(c.env.DB, scope.ledger.id))! }));
 });
