@@ -4,7 +4,12 @@ export interface LedgerRow {
   name: string;
   base_currency: string;
   created_at: number;
+  /** Set while the bot is not in the group. */
   archived_at: number | null;
+  /** Set once the ledger is finished; it is then read-only. */
+  closed_at: number | null;
+  /** The ledger started when this one was closed. */
+  successor_id: string | null;
 }
 
 export interface MemberRow {
@@ -21,17 +26,21 @@ export function findLedger(db: D1Database, id: string): Promise<LedgerRow | null
   return db.prepare('SELECT * FROM ledgers WHERE id = ?').bind(id).first<LedgerRow>();
 }
 
-export function findLedgerByGroup(db: D1Database, groupId: string): Promise<LedgerRow | null> {
-  return db.prepare('SELECT * FROM ledgers WHERE line_group_id = ?').bind(groupId).first<LedgerRow>();
+/** The group's open ledger (at most one, enforced by a partial unique index). */
+export function findOpenLedgerByGroup(db: D1Database, groupId: string): Promise<LedgerRow | null> {
+  return db
+    .prepare('SELECT * FROM ledgers WHERE line_group_id = ? AND closed_at IS NULL')
+    .bind(groupId)
+    .first<LedgerRow>();
 }
 
-/** Returns the group's ledger, creating (or un-archiving) it as needed. */
+/** Returns the group's open ledger, creating (or un-archiving) it as needed. */
 export async function ensureGroupLedger(
   db: D1Database,
   groupId: string,
   loadName: () => Promise<string>,
 ): Promise<LedgerRow> {
-  const existing = await findLedgerByGroup(db, groupId);
+  const existing = await findOpenLedgerByGroup(db, groupId);
   if (existing) {
     if (existing.archived_at !== null) {
       await db.prepare('UPDATE ledgers SET archived_at = NULL WHERE id = ?').bind(existing.id).run();
@@ -43,19 +52,95 @@ export async function ensureGroupLedger(
   await db
     .prepare(
       `INSERT INTO ledgers (id, line_group_id, name, base_currency, created_at)
-       VALUES (?, ?, ?, 'TWD', ?) ON CONFLICT (line_group_id) DO NOTHING`,
+       VALUES (?, ?, ?, 'TWD', ?) ON CONFLICT DO NOTHING`,
     )
     .bind(crypto.randomUUID(), groupId, await loadName(), Date.now())
     .run();
   // Re-read so a concurrent insert for the same group resolves to one ledger.
-  return (await findLedgerByGroup(db, groupId))!;
+  return (await findOpenLedgerByGroup(db, groupId))!;
 }
 
 export async function archiveGroupLedger(db: D1Database, groupId: string): Promise<void> {
   await db
-    .prepare('UPDATE ledgers SET archived_at = ? WHERE line_group_id = ? AND archived_at IS NULL')
+    .prepare('UPDATE ledgers SET archived_at = ? WHERE line_group_id = ? AND closed_at IS NULL AND archived_at IS NULL')
     .bind(Date.now(), groupId)
     .run();
+}
+
+/**
+ * Closes `ledger` and opens a new one for the same group, copying its members.
+ * The follow-up inserts are guarded on the successor id written by the close,
+ * so a concurrent close turns the whole batch into a no-op. Returns the new
+ * ledger id, or null if the ledger was already closed.
+ */
+export async function closeAndStartNext(db: D1Database, ledger: LedgerRow, name: string): Promise<string | null> {
+  const nextId = crypto.randomUUID();
+  const now = Date.now();
+  const [closed] = await db.batch([
+    db
+      .prepare('UPDATE ledgers SET closed_at = ?, successor_id = ? WHERE id = ? AND closed_at IS NULL')
+      .bind(now, nextId, ledger.id),
+    db
+      .prepare(
+        `INSERT INTO ledgers (id, line_group_id, name, base_currency, created_at, archived_at)
+         SELECT ?, line_group_id, ?, base_currency, ?, archived_at FROM ledgers WHERE id = ? AND successor_id = ?`,
+      )
+      .bind(nextId, name, now, ledger.id, nextId),
+    db
+      .prepare(
+        `INSERT INTO members (id, ledger_id, line_user_id, display_name, avatar_url, is_virtual, joined_at)
+         SELECT lower(hex(randomblob(16))), ?, line_user_id, display_name, avatar_url, is_virtual, joined_at
+         FROM members
+         WHERE ledger_id = ? AND EXISTS (SELECT 1 FROM ledgers WHERE id = ? AND successor_id = ?)`,
+      )
+      .bind(nextId, ledger.id, ledger.id, nextId),
+  ]);
+  return closed!.meta.changes === 0 ? null : nextId;
+}
+
+export interface GroupLedgerSummary {
+  id: string;
+  name: string;
+  baseCurrency: string;
+  createdAt: number;
+  closedAt: number | null;
+  totalSpentMinor: number;
+  isMember: boolean;
+}
+
+/** Every ledger the group has had, newest first. */
+export async function listGroupLedgers(
+  db: D1Database,
+  groupId: string,
+  lineUserId: string,
+): Promise<GroupLedgerSummary[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT l.id, l.name, l.base_currency, l.created_at, l.closed_at,
+         COALESCE((SELECT SUM(e.base_amount_minor) FROM expenses e
+                   WHERE e.ledger_id = l.id AND e.deleted_at IS NULL), 0) AS total,
+         EXISTS (SELECT 1 FROM members m WHERE m.ledger_id = l.id AND m.line_user_id = ?) AS is_member
+       FROM ledgers l WHERE l.line_group_id = ? ORDER BY l.created_at DESC`,
+    )
+    .bind(lineUserId, groupId)
+    .all<{
+      id: string;
+      name: string;
+      base_currency: string;
+      created_at: number;
+      closed_at: number | null;
+      total: number;
+      is_member: number;
+    }>();
+  return results.map((r) => ({
+    id: r.id,
+    name: r.name,
+    baseCurrency: r.base_currency,
+    createdAt: r.created_at,
+    closedAt: r.closed_at,
+    totalSpentMinor: r.total,
+    isMember: r.is_member === 1,
+  }));
 }
 
 export async function hasLedgerActivity(db: D1Database, ledgerId: string): Promise<boolean> {

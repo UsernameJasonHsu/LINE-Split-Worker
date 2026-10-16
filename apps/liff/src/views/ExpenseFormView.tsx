@@ -16,6 +16,7 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
   const base = view.ledger.baseCurrency;
   const members = view.members;
   const existing = expenseId ? data.expenses.find((e) => e.id === expenseId) : undefined;
+  const readOnly = view.ledger.closedAt !== null;
 
   const [form, setForm] = useState<ExpenseForm>(() =>
     existing ? formFromExpense(existing, members) : emptyForm(members, view.meMemberId, base),
@@ -32,7 +33,7 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
       setFxNote(null);
       return;
     }
-    if (form.fxRateEdited) return;
+    if (form.fxRateEdited || readOnly) return;
     if (existing && existing.currency === form.currency) {
       setForm((f) => ({ ...f, fxRate: existing.fxRate }));
       setFxNote(existing.fxSource === 'MANUAL' ? '記帳時手動輸入的匯率' : '記帳當時的參考匯率');
@@ -106,173 +107,179 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
   const allSelected = form.equalIds.length === members.length;
 
   return (
-    <main className="page with-footer">
-      <TopBar title={existing ? '編輯支出' : '新增支出'} onBack={() => navigate({ name: 'home' })} />
+    <main className={readOnly ? 'page' : 'page with-footer'}>
+      <TopBar
+        title={readOnly ? '支出明細' : existing ? '編輯支出' : '新增支出'}
+        onBack={() => navigate({ name: 'home' })}
+      />
+      {readOnly && <p className="banner">這本帳本已結束，僅供查看。</p>}
 
-      <section className="card form">
-        <label className="field">
-          <span>項目</span>
-          <input
-            value={form.title}
-            onChange={(e) => set({ title: e.target.value })}
-            placeholder="例如：晚餐、計程車"
-            maxLength={100}
-          />
-          {showErrors && titleError && <small className="error">{titleError}</small>}
-        </label>
-
-        <div className="field">
-          <span>金額</span>
-          <div className="amount-row">
-            <select
-              aria-label="幣別"
-              value={form.currency}
-              onChange={(e) => set({ currency: e.target.value, fxRateEdited: false, fxRate: '' })}
-            >
-              {SUPPORTED_CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+      <fieldset className="plain" disabled={readOnly}>
+        <section className="card form">
+          <label className="field">
+            <span>項目</span>
             <input
-              inputMode={decimalsOf(form.currency) === 0 ? 'numeric' : 'decimal'}
-              value={form.amount}
-              onChange={(e) => set({ amount: e.target.value })}
-              placeholder="0"
-              className="amount-input"
+              value={form.title}
+              onChange={(e) => set({ title: e.target.value })}
+              placeholder="例如：晚餐、計程車"
+              maxLength={100}
             />
+            {showErrors && titleError && <small className="error">{titleError}</small>}
+          </label>
+
+          <div className="field">
+            <span>金額</span>
+            <div className="amount-row">
+              <select
+                aria-label="幣別"
+                value={form.currency}
+                onChange={(e) => set({ currency: e.target.value, fxRateEdited: false, fxRate: '' })}
+              >
+                {SUPPORTED_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <input
+                inputMode={decimalsOf(form.currency) === 0 ? 'numeric' : 'decimal'}
+                value={form.amount}
+                onChange={(e) => set({ amount: e.target.value })}
+                placeholder="0"
+                className="amount-input"
+              />
+            </div>
           </div>
-        </div>
 
-        {form.currency !== base && (
-          <label className="field">
-            <span>
-              匯率（1 {form.currency} = ? {base}）
-            </span>
-            <input
-              inputMode="decimal"
-              value={form.fxRate}
-              onChange={(e) => set({ fxRate: e.target.value, fxRateEdited: true })}
-            />
-            {fxNote && !form.fxRateEdited && <small className="muted">{fxNote}</small>}
-            {form.fxRateEdited && <small className="muted">使用手動輸入的匯率</small>}
-            {validation.ok && (
-              <small className="muted">
-                ≈ <Money minor={validation.computed.baseAmountMinor} currency={base} />
-              </small>
-            )}
-          </label>
-        )}
+          {form.currency !== base && (
+            <label className="field">
+              <span>
+                匯率（1 {form.currency} = ? {base}）
+              </span>
+              <input
+                inputMode="decimal"
+                value={form.fxRate}
+                onChange={(e) => set({ fxRate: e.target.value, fxRateEdited: true })}
+              />
+              {fxNote && !form.fxRateEdited && <small className="muted">{fxNote}</small>}
+              {form.fxRateEdited && <small className="muted">使用手動輸入的匯率</small>}
+              {validation.ok && (
+                <small className="muted">
+                  ≈ <Money minor={validation.computed.baseAmountMinor} currency={base} />
+                </small>
+              )}
+            </label>
+          )}
 
-        <div className="field-row">
-          <label className="field">
-            <span>付款人</span>
-            <select value={form.payerId} onChange={(e) => set({ payerId: e.target.value })}>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.displayName}
-                  {m.id === view.meMemberId ? '（我）' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>日期</span>
-            <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
-          </label>
-        </div>
-        {existing && existing.payers.length > 1 && (
-          <small className="muted">此筆原本有多位付款人，儲存後會改為單一付款人。</small>
-        )}
-      </section>
+          <div className="field-row">
+            <label className="field">
+              <span>付款人</span>
+              <select value={form.payerId} onChange={(e) => set({ payerId: e.target.value })}>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.displayName}
+                    {m.id === view.meMemberId ? '（我）' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>日期</span>
+              <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
+            </label>
+          </div>
+          {existing && existing.payers.length > 1 && (
+            <small className="muted">此筆原本有多位付款人，儲存後會改為單一付款人。</small>
+          )}
+        </section>
 
-      <section className="card form">
-        <div className="segmented" role="tablist">
-          {SPLIT_TABS.map((t) => (
+        <section className="card form">
+          <div className="segmented" role="tablist">
+            {SPLIT_TABS.map((t) => (
+              <button
+                key={t.type}
+                type="button"
+                role="tab"
+                aria-selected={form.splitType === t.type}
+                className={form.splitType === t.type ? 'active' : ''}
+                onClick={() => set({ splitType: t.type })}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {form.splitType === 'equal' && (
             <button
-              key={t.type}
               type="button"
-              role="tab"
-              aria-selected={form.splitType === t.type}
-              className={form.splitType === t.type ? 'active' : ''}
-              onClick={() => set({ splitType: t.type })}
+              className="link-button"
+              onClick={() => set({ equalIds: allSelected ? [] : members.map((m) => m.id) })}
             >
-              {t.label}
+              {allSelected ? '全部取消' : '全選'}
             </button>
-          ))}
-        </div>
+          )}
 
-        {form.splitType === 'equal' && (
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => set({ equalIds: allSelected ? [] : members.map((m) => m.id) })}
-          >
-            {allSelected ? '全部取消' : '全選'}
-          </button>
-        )}
+          <ul className="list">
+            {members.map((m) => {
+              const share = shareOf.get(m.id);
+              return (
+                <li key={m.id} className="split-row">
+                  {form.splitType === 'equal' ? (
+                    <label className="split-label">
+                      <input type="checkbox" checked={form.equalIds.includes(m.id)} onChange={() => toggle(m.id)} />
+                      <Avatar member={m} size={28} />
+                      <span>{m.displayName}</span>
+                    </label>
+                  ) : (
+                    <span className="split-label">
+                      <Avatar member={m} size={28} />
+                      <span>{m.displayName}</span>
+                    </span>
+                  )}
 
-        <ul className="list">
-          {members.map((m) => {
-            const share = shareOf.get(m.id);
-            return (
-              <li key={m.id} className="split-row">
-                {form.splitType === 'equal' ? (
-                  <label className="split-label">
-                    <input type="checkbox" checked={form.equalIds.includes(m.id)} onChange={() => toggle(m.id)} />
-                    <Avatar member={m} size={28} />
-                    <span>{m.displayName}</span>
-                  </label>
-                ) : (
-                  <span className="split-label">
-                    <Avatar member={m} size={28} />
-                    <span>{m.displayName}</span>
-                  </span>
-                )}
+                  {form.splitType === 'weights' && (
+                    <span className="stepper">
+                      <button type="button" onClick={() => step(m.id, -1)} aria-label="減少">
+                        −
+                      </button>
+                      <span>{form.weights[m.id] ?? 0}</span>
+                      <button type="button" onClick={() => step(m.id, 1)} aria-label="增加">
+                        ＋
+                      </button>
+                    </span>
+                  )}
+                  {form.splitType === 'exact' && (
+                    <input
+                      className="exact-input"
+                      inputMode={decimalsOf(form.currency) === 0 ? 'numeric' : 'decimal'}
+                      value={form.exact[m.id] ?? ''}
+                      onChange={(e) => set({ exact: { ...form.exact, [m.id]: e.target.value } })}
+                      placeholder="0"
+                      aria-label={`${m.displayName} 的金額`}
+                    />
+                  )}
+                  <span className="split-share">{share ? formatMoney(share.shareMinor, form.currency) : '—'}</span>
+                </li>
+              );
+            })}
+          </ul>
+          {!validation.ok && (showErrors || form.amount !== '') && <p className="error">{validation.error}</p>}
+        </section>
+      </fieldset>
 
-                {form.splitType === 'weights' && (
-                  <span className="stepper">
-                    <button type="button" onClick={() => step(m.id, -1)} aria-label="減少">
-                      −
-                    </button>
-                    <span>{form.weights[m.id] ?? 0}</span>
-                    <button type="button" onClick={() => step(m.id, 1)} aria-label="增加">
-                      ＋
-                    </button>
-                  </span>
-                )}
-                {form.splitType === 'exact' && (
-                  <input
-                    className="exact-input"
-                    inputMode={decimalsOf(form.currency) === 0 ? 'numeric' : 'decimal'}
-                    value={form.exact[m.id] ?? ''}
-                    onChange={(e) => set({ exact: { ...form.exact, [m.id]: e.target.value } })}
-                    placeholder="0"
-                    aria-label={`${m.displayName} 的金額`}
-                  />
-                )}
-                <span className="split-share">
-                  {share ? formatMoney(share.shareMinor, form.currency) : '—'}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        {!validation.ok && (showErrors || form.amount !== '') && <p className="error">{validation.error}</p>}
-      </section>
-
-      {existing && (
+      {existing && !readOnly && (
         <button type="button" className="button danger block" onClick={remove} disabled={busy}>
           刪除這筆支出
         </button>
       )}
 
-      <footer className="sticky-footer">
-        <button type="button" className="button primary block" onClick={save} disabled={busy}>
-          {busy ? '儲存中…' : '儲存'}
-        </button>
-      </footer>
+      {!readOnly && (
+        <footer className="sticky-footer">
+          <button type="button" className="button primary block" onClick={save} disabled={busy}>
+            {busy ? '儲存中…' : '儲存'}
+          </button>
+        </footer>
+      )}
     </main>
   );
 }

@@ -1,12 +1,14 @@
 import { navigate, type ViewProps } from '../App';
 import { Avatar, formatDate, memberLookup, Money, TopBar } from '../components';
 import type { Expense } from '../api';
+import { openLedger } from '../liff';
 
 export function HomeView({ data }: ViewProps) {
   const { view, expenses, summary } = data;
   const base = view.ledger.baseCurrency;
   const members = memberLookup(view.members);
   const myBalance = summary.balances.find((b) => b.memberId === view.meMemberId)?.balanceMinor ?? 0;
+  const { closedAt, activeLedgerId } = view.ledger;
 
   const groups = new Map<string, Expense[]>();
   for (const e of expenses) {
@@ -16,9 +18,32 @@ export function HomeView({ data }: ViewProps) {
 
   return (
     <main className="page">
-      <TopBar title={view.ledger.name} />
+      <TopBar
+        title={view.ledger.name}
+        action={
+          <button
+            type="button"
+            className="icon-button text"
+            onClick={() => navigate({ name: 'ledgers' })}
+            aria-label="所有帳本"
+          >
+            ☰
+          </button>
+        }
+      />
 
-      {view.ledger.archived && <p className="banner">Bot 已離開群組，帳本仍可查看與記帳。</p>}
+      {closedAt !== null ? (
+        <div className="banner">
+          <p>這本帳本已於 {formatDate(closedAt)} 結束，僅供查看。</p>
+          {activeLedgerId && (
+            <button type="button" className="link-button" onClick={() => openLedger(activeLedgerId)}>
+              前往目前的帳本 ›
+            </button>
+          )}
+        </div>
+      ) : (
+        view.ledger.archived && <p className="banner">Bot 已離開群組，帳本仍可查看與記帳。</p>
+      )}
 
       <section className="card balance-card">
         <p className="muted small">我的餘額</p>
@@ -35,14 +60,20 @@ export function HomeView({ data }: ViewProps) {
         <p className="muted small">
           總支出 <Money minor={summary.totalSpentMinor} currency={base} /> · {view.members.length} 位成員
         </p>
-        <div className="button-row">
-          <button type="button" className="button primary" onClick={() => navigate({ name: 'expense', id: null })}>
-            ＋ 新增支出
+        {closedAt === null ? (
+          <div className="button-row">
+            <button type="button" className="button primary" onClick={() => navigate({ name: 'expense', id: null })}>
+              ＋ 新增支出
+            </button>
+            <button type="button" className="button" onClick={() => navigate({ name: 'settle' })}>
+              結算
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="button block spaced" onClick={() => navigate({ name: 'settle' })}>
+            查看結算
           </button>
-          <button type="button" className="button" onClick={() => navigate({ name: 'settle' })}>
-            結算
-          </button>
-        </div>
+        )}
       </section>
 
       {expenses.length === 0 ? (

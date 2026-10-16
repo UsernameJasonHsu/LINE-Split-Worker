@@ -307,6 +307,89 @@ describe('expenses and settlement flow', () => {
     ).toBe(400);
   });
 
+  describe('closing a ledger and starting the next one', () => {
+    async function closeWithActivity() {
+      const { ledgerId, alice, bob } = await setupLedger();
+      await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', {
+        title: '拉麵',
+        currency: 'TWD',
+        amount: '600',
+        payers: [{ memberId: alice, amount: '600' }],
+        split: { type: 'equal', memberIds: [alice, bob] },
+      });
+      const next = await api('POST', `/ledgers/${ledgerId}/close`, 'token-bob', { name: '韓國行' });
+      return { ledgerId, alice, bob, next };
+    }
+
+    it('creates a fresh ledger for the group carrying over members', async () => {
+      const { ledgerId, next } = await closeWithActivity();
+      expect(next.status).toBe(201);
+      expect(next.body.ledger).toMatchObject({ name: '韓國行', baseCurrency: 'TWD', closedAt: null });
+      expect(next.body.ledger.id).not.toBe(ledgerId);
+      expect(next.body.ledger.activeLedgerId).toBe(next.body.ledger.id);
+      expect(next.body.members.map((m: any) => m.displayName)).toEqual(['Alice', 'Bob']);
+      expect(next.body.members.find((m: any) => m.id === next.body.meMemberId).displayName).toBe('Bob');
+
+      const fresh = await api('GET', `/ledgers/${next.body.ledger.id}/summary`, 'token-alice');
+      expect(fresh.body).toMatchObject({ totalSpentMinor: 0, transfers: [] });
+
+      const old = await api('GET', `/ledgers/${ledgerId}`, 'token-alice');
+      expect(old.body.ledger.closedAt).toEqual(expect.any(Number));
+      expect(old.body.ledger.activeLedgerId).toBe(next.body.ledger.id);
+      // The old ledger keeps its history, including the unsettled balance.
+      expect((await api('GET', `/ledgers/${ledgerId}/summary`, 'token-alice')).body.transfers).toHaveLength(1);
+    });
+
+    it('lists the group ledgers newest first with membership', async () => {
+      const { ledgerId, next } = await closeWithActivity();
+      const history = await api('GET', `/ledgers/${next.body.ledger.id}/history`, 'token-alice');
+      expect(history.body.ledgers).toEqual([
+        expect.objectContaining({ id: next.body.ledger.id, name: '韓國行', closedAt: null, totalSpentMinor: 0, isMember: true }),
+        expect.objectContaining({ id: ledgerId, name: '日本旅行', totalSpentMinor: 600, isMember: true }),
+      ]);
+    });
+
+    it('makes the closed ledger read-only', async () => {
+      const { ledgerId, alice, bob } = await closeWithActivity();
+      const expenseId = (await api('GET', `/ledgers/${ledgerId}/expenses`, 'token-alice')).body.expenses[0].id;
+      const writes = [
+        api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', {
+          title: 'x',
+          currency: 'TWD',
+          amount: '1',
+          payers: [{ memberId: alice, amount: '1' }],
+          split: { type: 'equal', memberIds: [alice] },
+        }),
+        api('DELETE', `/ledgers/${ledgerId}/expenses/${expenseId}`, 'token-alice'),
+        api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', { fromMemberId: bob, toMemberId: alice, amount: '300' }),
+        api('PATCH', `/ledgers/${ledgerId}`, 'token-alice', { name: 'renamed' }),
+        api('POST', `/ledgers/${ledgerId}/close`, 'token-alice', { name: 'again' }),
+      ];
+      for (const res of await Promise.all(writes)) expect(res.status).toBe(409);
+    });
+
+    it('only lets existing members open a closed ledger', async () => {
+      const { ledgerId } = await closeWithActivity();
+      expect((await api('POST', `/ledgers/${ledgerId}/join`, 'token-eve')).status).toBe(403);
+      expect((await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice')).status).toBe(200);
+    });
+
+    it('points group commands at the new ledger', async () => {
+      const { next } = await closeWithActivity();
+      fake.replies.length = 0;
+      await callApp(
+        env,
+        signedWebhook([{ type: 'message', replyToken: 'rt', source: groupSource('Ualice'), message: { type: 'text', text: '帳本' } }]),
+      );
+      expect(JSON.stringify(fake.replies[0]!.messages)).toContain(`?l=${next.body.ledger.id}`);
+    });
+
+    it('rejects a blank name', async () => {
+      const { ledgerId } = await setupLedger();
+      expect((await api('POST', `/ledgers/${ledgerId}/close`, 'token-alice', { name: '  ' })).status).toBe(400);
+    });
+  });
+
   it('locks the base currency once there is activity', async () => {
     const { ledgerId, alice } = await setupLedger();
     expect((await api('PATCH', `/ledgers/${ledgerId}`, 'token-alice', { baseCurrency: 'JPY', name: '大阪' })).body.ledger).toMatchObject({

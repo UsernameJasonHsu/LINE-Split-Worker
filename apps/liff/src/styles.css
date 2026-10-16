@@ -501,3 +501,44 @@ input[type='checkbox'] {
   font-size: 14px;
   z-index: 20;
 }
+
+.banner p {
+  margin: 0;
+}
+
+.icon-button.text {
+  font-size: 22px;
+}
+
+.button.spaced {
+  margin-top: 14px;
+}
+
+.list-item:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.tag-open {
+  background: color-mix(in srgb, var(--brand) 15%, transparent);
+  color: var(--brand);
+}
+
+fieldset.plain {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}

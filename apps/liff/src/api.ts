@@ -8,7 +8,15 @@ export interface Member {
 }
 
 export interface LedgerView {
-  ledger: { id: string; name: string; baseCurrency: string; archived: boolean };
+  ledger: {
+    id: string;
+    name: string;
+    baseCurrency: string;
+    archived: boolean;
+    closedAt: number | null;
+    /** The group's current open ledger; equals `id` unless this one is closed. */
+    activeLedgerId: string | null;
+  };
   members: Member[];
   meMemberId: string;
 }
@@ -63,6 +71,16 @@ export interface Settlement {
   createdBy: string;
 }
 
+export interface GroupLedger {
+  id: string;
+  name: string;
+  baseCurrency: string;
+  createdAt: number;
+  closedAt: number | null;
+  totalSpentMinor: number;
+  isMember: boolean;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -95,6 +113,8 @@ export function createApi(getIdToken: () => string | null, ledgerId: string) {
 
   return {
     join: () => request<LedgerView>('POST', `${base}/join`),
+    history: async () => (await request<{ ledgers: GroupLedger[] }>('GET', `${base}/history`)).ledgers,
+    closeLedger: (name: string) => request<LedgerView>('POST', `${base}/close`, { name }),
     patchLedger: (patch: { name?: string; baseCurrency?: string }) => request<LedgerView>('PATCH', base, patch),
     expenses: async () => (await request<{ expenses: Expense[] }>('GET', `${base}/expenses`)).expenses,
     createExpense: (body: ExpenseBody) => request<Expense>('POST', `${base}/expenses`, body),
@@ -120,6 +140,7 @@ export function errorMessage(err: unknown): string {
     if (err.status === 401) return '登入已過期，請關閉後重新開啟帳本';
     if (err.status === 403) return '你不是這個帳本的成員';
     if (err.status === 404) return '找不到資料，可能已被刪除';
+    if (err.status === 409 && /closed/i.test(err.message)) return '這本帳本已結束，無法修改';
     if (err.status === 409) return '資料已被其他人修改，請重新整理後再試';
     if (err.status === 502) return '暫時無法取得匯率，請手動輸入匯率';
     return err.message;

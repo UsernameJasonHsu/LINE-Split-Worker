@@ -3,6 +3,7 @@ import { createApi, errorMessage, type Api, type Expense, type LedgerView, type 
 import { initLiff, ledgerIdFromUrl, liff } from './liff';
 import { ExpenseFormView } from './views/ExpenseFormView';
 import { HomeView } from './views/HomeView';
+import { LedgersView } from './views/LedgersView';
 import { SettleView } from './views/SettleView';
 
 export interface LedgerData {
@@ -12,12 +13,17 @@ export interface LedgerData {
   settlements: Settlement[];
 }
 
-export type Route = { name: 'home' } | { name: 'expense'; id: string | null } | { name: 'settle' };
+export type Route =
+  | { name: 'home' }
+  | { name: 'expense'; id: string | null }
+  | { name: 'settle' }
+  | { name: 'ledgers' };
 
 function parseHash(hash: string): Route {
   const m = hash.match(/^#\/expense\/(.+)$/);
   if (m) return { name: 'expense', id: m[1] === 'new' ? null : decodeURIComponent(m[1]!) };
   if (hash === '#/settle') return { name: 'settle' };
+  if (hash === '#/ledgers') return { name: 'ledgers' };
   return { name: 'home' };
 }
 
@@ -36,7 +42,8 @@ export function navigate(route: Route) {
     }
     history.replaceState(null, '', window.location.pathname + window.location.search);
   } else {
-    const hash = route.name === 'settle' ? '#/settle' : `#/expense/${route.id ? encodeURIComponent(route.id) : 'new'}`;
+    const hash =
+      route.name === 'expense' ? `#/expense/${route.id ? encodeURIComponent(route.id) : 'new'}` : `#/${route.name}`;
     history.pushState({ inApp: true }, '', hash);
   }
   window.dispatchEvent(new Event(ROUTE_EVENT));
@@ -122,6 +129,7 @@ export function App() {
       {route.name === 'home' && <HomeView {...ctx} />}
       {route.name === 'expense' && <ExpenseFormView key={route.id ?? 'new'} {...ctx} expenseId={route.id} />}
       {route.name === 'settle' && <SettleView {...ctx} />}
+      {route.name === 'ledgers' && <LedgersView {...ctx} />}
       {toast && (
         <div className="toast" role="status">
           {toast}

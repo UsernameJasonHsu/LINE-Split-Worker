@@ -29,6 +29,23 @@ export function ledgerLink(ledgerId: string): string {
   return `https://liff.line.me/${import.meta.env.VITE_LIFF_ID}?l=${encodeURIComponent(ledgerId)}`;
 }
 
+/** Reloads the app on another ledger (each ledger is its own ?l= URL). */
+export function openLedger(ledgerId: string): void {
+  window.location.assign(`${window.location.pathname}?l=${encodeURIComponent(ledgerId)}`);
+}
+
+/** Posts into the chat the LIFF was opened from; silently does nothing elsewhere. */
+export async function trySendToChat(text: string): Promise<boolean> {
+  const context = liff.getContext();
+  if (!context || !['group', 'room', 'utou'].includes(context.type)) return false;
+  try {
+    await liff.sendMessages([{ type: 'text', text }]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Posts a text message: straight into the chat the LIFF was opened from when
  * possible, otherwise via the share target picker.

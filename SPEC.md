@@ -24,6 +24,7 @@
 
 ### 關鍵設計決策
 
+- **一群組多帳本**：同一群組可依序有多本帳本，同時最多一本進行中（partial unique index `WHERE closed_at IS NULL`）。「結束帳本並開新帳本」會關閉舊帳本（唯讀、記錄 `successor_id`）並複製成員到新帳本；群組指令一律對應進行中的帳本；已結束帳本只允許原成員開啟。
 - **群組 ↔ 帳本綁定**：`liff.getContext()` 不再提供 `groupId`。Bot 收到 `join` 事件時建立帳本，於群組回覆 `https://liff.line.me/{liffId}?l={ledgerId}`；成員一律由此連結進入。
 - **同一 Provider**：Messaging API Channel 與 LINE Login Channel 必須同屬一個 Provider，否則同一人的 userId 不一致。
 - **身分驗證**：前端送 `liff.getIDToken()`，後端驗證後取 `sub` 為 userId；不信任前端傳入的 userId。
@@ -53,7 +54,7 @@
 ## 資料模型（D1）
 
 ```
-ledgers         (id, line_group_id UNIQUE NULL, name, base_currency, created_at, archived_at)
+ledgers         (id, line_group_id NULL, name, base_currency, created_at, archived_at, closed_at, successor_id)
 members         (id, ledger_id, line_user_id NULL, display_name, avatar_url, is_virtual, joined_at)
 expenses        (id, ledger_id, title, currency, amount_minor, fx_rate, fx_source, base_amount_minor,
                  split_type, category, spent_at, created_by, created_at, updated_at, revision, deleted_at)

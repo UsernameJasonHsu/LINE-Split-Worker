@@ -5,6 +5,7 @@ import { HttpError } from './errors';
 import { getFxRate } from './fx';
 import { verifyIdToken } from './line/idToken';
 import {
+  closeLedgerSchema,
   expenseSchema,
   expenseUpdateSchema,
   fxQuerySchema,
@@ -13,8 +14,12 @@ import {
 } from './schemas';
 import { createExpense, deleteExpense, listExpenses, updateExpense } from './services/expenses';
 import {
+  closeAndStartNext,
   findLedger,
+  findMemberByLineUser,
+  findOpenLedgerByGroup,
   hasLedgerActivity,
+  listGroupLedgers,
   listMembers,
   updateLedger,
   upsertLineMember,
@@ -56,13 +61,24 @@ async function requireMember(c: Ctx): Promise<LedgerScope> {
   return { ledger, members, me };
 }
 
-function ledgerView({ ledger, members, me }: LedgerScope) {
+/** Rejects writes to a closed (finished) ledger. */
+function requireOpen(scope: LedgerScope): LedgerScope {
+  if (scope.ledger.closed_at !== null) throw new HttpError(409, 'This ledger is closed and read-only');
+  return scope;
+}
+
+async function ledgerView(db: D1Database, { ledger, members, me }: LedgerScope) {
+  const open =
+    ledger.closed_at === null ? ledger : ledger.line_group_id ? await findOpenLedgerByGroup(db, ledger.line_group_id) : null;
   return {
     ledger: {
       id: ledger.id,
       name: ledger.name,
       baseCurrency: ledger.base_currency,
       archived: ledger.archived_at !== null,
+      closedAt: ledger.closed_at,
+      /** The group's current open ledger (this one unless it is closed). */
+      activeLedgerId: open?.id ?? null,
     },
     members: members.map((m) => ({
       id: m.id,
@@ -88,20 +104,48 @@ api.use('*', async (c, next) => {
   await next();
 });
 
-/** Idempotent: anyone holding the ledger link can join. Refreshes name/avatar. */
+/**
+ * Idempotent: anyone holding an open ledger's link can join; closed ledgers
+ * only admit their existing members. Refreshes name/avatar.
+ */
 api.post('/ledgers/:ledgerId/join', async (c) => {
   const ledger = await findLedger(c.env.DB, c.req.param('ledgerId'));
   if (!ledger) throw new HttpError(404, 'Ledger not found');
   const user = c.get('user');
+  if (ledger.closed_at !== null && !(await findMemberByLineUser(c.env.DB, ledger.id, user.lineUserId))) {
+    throw new HttpError(403, 'Not a member of this closed ledger');
+  }
   const me = await upsertLineMember(c.env.DB, ledger.id, user.lineUserId, user);
   const members = await listMembers(c.env.DB, ledger.id);
-  return c.json(ledgerView({ ledger, members, me }));
+  return c.json(await ledgerView(c.env.DB, { ledger, members, me }));
 });
 
-api.get('/ledgers/:ledgerId', async (c) => c.json(ledgerView(await requireMember(c))));
+api.get('/ledgers/:ledgerId', async (c) => c.json(await ledgerView(c.env.DB, await requireMember(c))));
+
+api.get('/ledgers/:ledgerId/history', async (c) => {
+  const { ledger } = await requireMember(c);
+  const ledgers = ledger.line_group_id
+    ? await listGroupLedgers(c.env.DB, ledger.line_group_id, c.get('user').lineUserId)
+    : [];
+  return c.json({ ledgers });
+});
+
+/** Finishes this ledger and opens a new one for the group with the same members. */
+api.post('/ledgers/:ledgerId/close', async (c) => {
+  const { ledger } = requireOpen(await requireMember(c));
+  const { name } = await parseJson(c, closeLedgerSchema);
+  if (!ledger.line_group_id) throw new HttpError(409, 'Only group ledgers can start a new ledger');
+  const nextId = await closeAndStartNext(c.env.DB, ledger, name);
+  if (!nextId) throw new HttpError(409, 'This ledger is closed and read-only');
+
+  const next = (await findLedger(c.env.DB, nextId))!;
+  const members = await listMembers(c.env.DB, nextId);
+  const me = members.find((m) => m.line_user_id === c.get('user').lineUserId)!;
+  return c.json(await ledgerView(c.env.DB, { ledger: next, members, me }), 201);
+});
 
 api.patch('/ledgers/:ledgerId', async (c) => {
-  const scope = await requireMember(c);
+  const scope = requireOpen(await requireMember(c));
   const patch = await parseJson(c, ledgerPatchSchema);
   if (
     patch.baseCurrency &&
@@ -111,7 +155,7 @@ api.patch('/ledgers/:ledgerId', async (c) => {
     throw new HttpError(409, 'Base currency cannot change once expenses or settlements exist');
   }
   await updateLedger(c.env.DB, scope.ledger.id, patch);
-  return c.json(ledgerView({ ...scope, ledger: (await findLedger(c.env.DB, scope.ledger.id))! }));
+  return c.json(await ledgerView(c.env.DB, { ...scope, ledger: (await findLedger(c.env.DB, scope.ledger.id))! }));
 });
 
 api.get('/ledgers/:ledgerId/expenses', async (c) => {
@@ -120,19 +164,19 @@ api.get('/ledgers/:ledgerId/expenses', async (c) => {
 });
 
 api.post('/ledgers/:ledgerId/expenses', async (c) => {
-  const { ledger, members, me } = await requireMember(c);
+  const { ledger, members, me } = requireOpen(await requireMember(c));
   const body = await parseJson(c, expenseSchema);
   return c.json(await createExpense(c.env.DB, ledger, members, me, body), 201);
 });
 
 api.put('/ledgers/:ledgerId/expenses/:expenseId', async (c) => {
-  const { ledger, members, me } = await requireMember(c);
+  const { ledger, members, me } = requireOpen(await requireMember(c));
   const { revision, ...body } = await parseJson(c, expenseUpdateSchema);
   return c.json(await updateExpense(c.env.DB, ledger, members, me, c.req.param('expenseId'), revision, body));
 });
 
 api.delete('/ledgers/:ledgerId/expenses/:expenseId', async (c) => {
-  const { ledger, me } = await requireMember(c);
+  const { ledger, me } = requireOpen(await requireMember(c));
   await deleteExpense(c.env.DB, ledger, me, c.req.param('expenseId'));
   return c.body(null, 204);
 });
@@ -148,13 +192,13 @@ api.get('/ledgers/:ledgerId/settlements', async (c) => {
 });
 
 api.post('/ledgers/:ledgerId/settlements', async (c) => {
-  const { ledger, members, me } = await requireMember(c);
+  const { ledger, members, me } = requireOpen(await requireMember(c));
   const body = await parseJson(c, settlementSchema);
   return c.json(await createSettlement(c.env.DB, ledger, members, me, body), 201);
 });
 
 api.delete('/ledgers/:ledgerId/settlements/:settlementId', async (c) => {
-  const { ledger, me } = await requireMember(c);
+  const { ledger, me } = requireOpen(await requireMember(c));
   await deleteSettlement(c.env.DB, ledger, me, c.req.param('settlementId'));
   return c.body(null, 204);
 });

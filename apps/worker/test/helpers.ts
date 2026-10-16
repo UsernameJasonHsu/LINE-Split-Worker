@@ -15,17 +15,25 @@ export const TEST_ENV = {
 
 const TABLES = ['audit_logs', 'fx_rates', 'settlements', 'expense_shares', 'expense_payers', 'expenses', 'members', 'ledgers'];
 
-export async function createTestEnv() {
+const MIGRATIONS_DIR = join(__dirname, '..', 'migrations');
+export const MIGRATIONS = readdirSync(MIGRATIONS_DIR).sort();
+
+/** Applies migration files in order, one transaction per file like `wrangler d1 migrations apply`. */
+export async function applyMigrations(db: D1Database, files = MIGRATIONS): Promise<void> {
+  for (const file of files) {
+    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n');
+    const statements = sql.split(';').map((s) => s.trim()).filter(Boolean);
+    await db.batch(statements.map((s) => db.prepare(s)));
+  }
+}
+
+export async function createTestEnv({ migrate = true } = {}) {
   const proxy = await getPlatformProxy<Env>({ configPath: 'wrangler.jsonc', persist: false });
   const env: Env = { ...proxy.env, ...TEST_ENV };
-
-  const dir = join(__dirname, '..', 'migrations');
-  for (const file of readdirSync(dir).sort()) {
-    const sql = readFileSync(join(dir, file), 'utf8');
-    for (const stmt of sql.split(';').map((s) => s.trim()).filter(Boolean)) {
-      await env.DB.prepare(stmt).run();
-    }
-  }
+  if (migrate) await applyMigrations(env.DB);
 
   return {
     env,
