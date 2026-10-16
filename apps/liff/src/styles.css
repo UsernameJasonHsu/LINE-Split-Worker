@@ -761,3 +761,21 @@ textarea:focus {
     color: #93c5fd;
   }
 }
+
+.admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-controls .admin-actions .button {
+  align-self: auto;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}

@@ -78,6 +78,8 @@ export const feedbackStatusSchema = z.enum(FEEDBACK_STATUSES);
 export const feedbackPatchSchema = z.object({
   status: feedbackStatusSchema.optional(),
   adminNote: z.string().trim().max(1000).nullable().optional(),
+  /** Also push the status / reply to the submitter's chat with the bot. */
+  notify: z.boolean().optional(),
 });
 
 export const fxQuerySchema = z.object({ from: currency, to: currency });

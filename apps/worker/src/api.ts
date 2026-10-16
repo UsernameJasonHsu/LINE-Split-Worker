@@ -32,10 +32,12 @@ import {
   type MemberRow,
 } from './services/ledgers';
 import { LineClient } from './line/client';
-import { adminFeedbackUrl } from './line/messages';
+import { adminFeedbackUrl, feedbackUrl } from './line/messages';
 import {
   createFeedback,
   feedbackNotice,
+  feedbackSubmitter,
+  replyNotice,
   listAllFeedback,
   listMyFeedback,
   toPublicFeedback,
@@ -284,10 +286,30 @@ api.get('/admin/feedback', async (c) => {
   return c.json({ feedback: await listAllFeedback(c.env.DB, status?.data) });
 });
 
+/**
+ * Updates status / reply. With `notify`, the result is pushed to the submitter
+ * synchronously so the admin learns whether it went out; a failed push (quota,
+ * blocked bot) never rolls back the update.
+ */
 api.patch('/admin/feedback/:id', async (c) => {
   requireAdmin(c);
-  const patch = await parseJson(c, feedbackPatchSchema);
-  return c.json(await updateFeedback(c.env.DB, c.req.param('id'), patch));
+  const { notify, ...patch } = await parseJson(c, feedbackPatchSchema);
+  const updated = await updateFeedback(c.env.DB, c.req.param('id'), patch);
+
+  let notified = false;
+  if (notify) {
+    const to = await feedbackSubmitter(c.env.DB, updated.id);
+    try {
+      if (to) {
+        const text = replyNotice(updated, feedbackUrl(c.env.LIFF_ID));
+        await new LineClient(c.env.LINE_CHANNEL_ACCESS_TOKEN).push(to, [{ type: 'text', text }]);
+        notified = true;
+      }
+    } catch (err) {
+      console.error('Failed to push feedback reply', err);
+    }
+  }
+  return c.json({ ...updated, notified });
 });
 
 /** The caller's own payment details; nobody can read or change another user's here. */

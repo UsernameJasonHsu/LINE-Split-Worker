@@ -10,6 +10,13 @@ export const CATEGORY_LABELS: Record<FeedbackCategory, string> = {
   other: '其他',
 };
 
+export const STATUS_LABELS: Record<FeedbackStatus, string> = {
+  new: '新回饋',
+  in_progress: '處理中',
+  done: '已完成',
+  wont_fix: '暫不處理',
+};
+
 const DAILY_LIMIT = 10;
 
 export interface FeedbackDto {
@@ -149,14 +156,33 @@ export async function updateFeedback(
   return (await getFeedback(db, id))!;
 }
 
+/** The LINE user who submitted the feedback (kept out of the DTOs). */
+export async function feedbackSubmitter(db: D1Database, id: string): Promise<string | null> {
+  const row = await db.prepare('SELECT line_user_id FROM feedback WHERE id = ?').bind(id).first<{ line_user_id: string }>();
+  return row?.line_user_id ?? null;
+}
+
+const excerpt = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}…` : s);
+
+/** Plain-text update pushed to the submitter after an admin review. */
+export function replyNotice(f: FeedbackDto, feedbackPageUrl: string): string {
+  return [
+    f.adminNote ? `📝 你的回饋有新回覆（狀態：${STATUS_LABELS[f.status]}）` : `📝 你的回饋狀態更新為：${STATUS_LABELS[f.status]}`,
+    '',
+    `你的回饋：${excerpt(f.message, 100)}`,
+    ...(f.adminNote ? ['', `回覆：${f.adminNote}`] : []),
+    '',
+    `查看所有回饋：${feedbackPageUrl}`,
+  ].join('\n');
+}
+
 /** Plain-text notification pushed to admins for a new piece of feedback. */
 export function feedbackNotice(f: AdminFeedbackDto, adminUrl: string): string {
-  const excerpt = f.message.length > 300 ? `${f.message.slice(0, 300)}…` : f.message;
   return [
     `📝 新回饋（${CATEGORY_LABELS[f.category]}）`,
     `來自：${f.displayName}${f.ledgerName ? `（${f.ledgerName}）` : ''}`,
     '',
-    excerpt,
+    excerpt(f.message, 300),
     '',
     `管理回饋：${adminUrl}`,
   ].join('\n');

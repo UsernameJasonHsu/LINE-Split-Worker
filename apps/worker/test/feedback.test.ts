@@ -123,6 +123,57 @@ describe('admin', () => {
   });
 });
 
+describe('notifying the submitter', () => {
+  it('pushes the reply and status to the submitter when asked', async () => {
+    const { id } = (await send('token-alice', { category: 'bug', message: '日期欄位跑版了' })).body;
+    fake.pushes.length = 0;
+
+    const res = await api('PATCH', `/admin/feedback/${id}`, 'token-admin', {
+      status: 'done',
+      adminNote: '已修正，請重新開啟帳本',
+      notify: true,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.notified).toBe(true);
+    expect(fake.pushes).toHaveLength(1);
+    expect(fake.pushes[0]!.to).toBe('Ualice');
+    const text = fake.pushes[0]!.messages[0].text as string;
+    expect(text).toContain('已完成');
+    expect(text).toContain('日期欄位跑版了');
+    expect(text).toContain('已修正，請重新開啟帳本');
+    expect(text).toContain('view=feedback');
+  });
+
+  it('sends a status-only notice when there is no reply', async () => {
+    const { id } = (await send('token-alice', { category: 'idea', message: '想要匯出' })).body;
+    fake.pushes.length = 0;
+    await api('PATCH', `/admin/feedback/${id}`, 'token-admin', { status: 'in_progress', notify: true });
+    const text = fake.pushes[0]!.messages[0].text as string;
+    expect(text).toContain('處理中');
+    expect(text).not.toContain('回覆：');
+  });
+
+  it('does not push unless asked', async () => {
+    const { id } = (await send('token-alice', { category: 'bug', message: 'x' })).body;
+    fake.pushes.length = 0;
+    const res = await api('PATCH', `/admin/feedback/${id}`, 'token-admin', { status: 'done', adminNote: 'ok' });
+    expect(res.body.notified).toBe(false);
+    expect(fake.pushes).toEqual([]);
+  });
+
+  it('keeps the update when the push fails', async () => {
+    const { id } = (await send('token-alice', { category: 'bug', message: 'x' })).body;
+    const { http } = await import('../src/http');
+    const realFetch = http.fetch;
+    http.fetch = async (input, init) =>
+      String(input).endsWith('/push') ? new Response('{"message":"quota"}', { status: 429 }) : realFetch(input, init);
+
+    const res = await api('PATCH', `/admin/feedback/${id}`, 'token-admin', { status: 'done', adminNote: 'ok', notify: true });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'done', adminNote: 'ok', notified: false });
+  });
+});
+
 describe('group command', () => {
   it('replies with the feedback link', async () => {
     await callApp(

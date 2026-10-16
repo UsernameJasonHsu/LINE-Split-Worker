@@ -82,14 +82,25 @@ function AdminFeedbackCard({
 }) {
   const [status, setStatus] = useState(item.status);
   const [note, setNote] = useState(item.adminNote ?? '');
+  const [notifyUser, setNotifyUser] = useState(true);
   const [busy, setBusy] = useState(false);
   const dirty = status !== item.status || note.trim() !== (item.adminNote ?? '');
 
   async function save() {
     setBusy(true);
     try {
-      await account.updateFeedback(item.id, { status, adminNote: note.trim() || null });
-      notify('已更新');
+      const result = await account.updateFeedback(item.id, {
+        status,
+        adminNote: note.trim() || null,
+        notify: notifyUser,
+      });
+      notify(
+        !notifyUser
+          ? '已更新'
+          : result.notified
+            ? `已更新，並私訊通知 ${item.displayName}`
+            : '已更新，但私訊未送出（可能是推播額度不足）',
+      );
       onChanged();
     } catch (err) {
       notify(errorMessage(err));
@@ -125,9 +136,16 @@ function AdminFeedbackCard({
           <span>回覆（回饋者看得到）</span>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} rows={2} />
         </label>
-        <button type="button" className="button primary small" disabled={busy || !dirty} onClick={save}>
-          {busy ? '儲存中…' : '儲存'}
-        </button>
+        <div className="admin-actions">
+          <label className="check">
+            <input type="checkbox" checked={notifyUser} onChange={(e) => setNotifyUser(e.target.checked)} />
+            <span>同時私訊通知對方</span>
+          </label>
+          <button type="button" className="button primary small" disabled={busy || !dirty} onClick={save}>
+            {busy ? '儲存中…' : '儲存'}
+          </button>
+        </div>
+        {notifyUser && <small className="muted">對方需已將 Bot 加為好友才收得到；每則私訊會使用 1 則推播額度。</small>}
       </div>
     </li>
   );

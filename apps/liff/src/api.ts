@@ -151,8 +151,8 @@ export function createAccountApi(getIdToken: () => string | null) {
     adminFeedback: async (status?: FeedbackStatus) =>
       (await request<{ feedback: AdminFeedback[] }>('GET', `/api/admin/feedback${status ? `?status=${status}` : ''}`))
         .feedback,
-    updateFeedback: (id: string, patch: { status?: FeedbackStatus; adminNote?: string | null }) =>
-      request<AdminFeedback>('PATCH', `/api/admin/feedback/${encodeURIComponent(id)}`, patch),
+    updateFeedback: (id: string, patch: { status?: FeedbackStatus; adminNote?: string | null; notify?: boolean }) =>
+      request<AdminFeedback & { notified: boolean }>('PATCH', `/api/admin/feedback/${encodeURIComponent(id)}`, patch),
   };
 }
 
