@@ -12,6 +12,7 @@ import {
 } from './api';
 import { initLiff, ledgerIdFromUrl, liff, urlParam } from './liff';
 import { AdminFeedbackView } from './views/AdminFeedbackView';
+import { AuditView } from './views/AuditView';
 import { ExpenseFormView } from './views/ExpenseFormView';
 import { FeedbackView } from './views/FeedbackView';
 import { HomeView } from './views/HomeView';
@@ -34,6 +35,7 @@ export type Route =
   | { name: 'ledgers' }
   | { name: 'feedback' }
   | { name: 'stats' }
+  | { name: 'audit' }
   | { name: 'admin' };
 
 function parseHash(hash: string): Route {
@@ -43,6 +45,7 @@ function parseHash(hash: string): Route {
   if (hash === '#/ledgers') return { name: 'ledgers' };
   if (hash === '#/feedback') return { name: 'feedback' };
   if (hash === '#/stats') return { name: 'stats' };
+  if (hash === '#/audit') return { name: 'audit' };
   if (hash === '#/admin') return { name: 'admin' };
   return { name: 'home' };
 }
@@ -192,6 +195,7 @@ export function App() {
       {route.name === 'settle' && <SettleView {...ctx} />}
       {route.name === 'ledgers' && <LedgersView {...ctx} />}
       {route.name === 'stats' && <StatsView {...ctx} />}
+      {route.name === 'audit' && <AuditView {...ctx} />}
       {route.name === 'feedback' && (
         <FeedbackView account={ctx.api} ledgerId={ctx.data.view.ledger.id} notify={setToast} onBack={back} />
       )}

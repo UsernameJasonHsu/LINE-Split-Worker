@@ -31,6 +31,7 @@ export const expenseSchema = z.object({
   fxRate: decimal.optional(),
   spentAt: timestamp.optional(),
   category: z.enum(EXPENSE_CATEGORIES).nullable().optional(),
+  note: z.string().trim().max(500).nullable().optional(),
   payers: z.array(z.object({ memberId, amount: decimal })).min(1).max(100),
   split,
 });

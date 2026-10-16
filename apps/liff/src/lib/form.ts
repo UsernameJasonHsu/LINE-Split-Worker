@@ -28,6 +28,7 @@ export interface ExpenseForm {
   date: string;
   splitType: SplitType;
   category: ExpenseCategory | null;
+  note: string;
   equalIds: string[];
   weights: Record<string, number>;
   exact: Record<string, string>;
@@ -68,6 +69,7 @@ export function emptyForm(members: Member[], meId: string, baseCurrency: string,
     fixed: {},
     restIds: members.map((m) => m.id),
     category: null,
+    note: '',
   };
 }
 
@@ -85,6 +87,7 @@ export function formFromExpense(e: Expense, members: Member[]): ExpenseForm {
         : {},
     splitType: e.splitType,
     category: (e.category as ExpenseCategory | null) ?? null,
+    note: e.note ?? '',
     equalIds:
       e.splitType === 'equal' ? members.filter((m) => shareOf.has(m.id)).map((m) => m.id) : members.map((m) => m.id),
     weights: Object.fromEntries(
@@ -155,6 +158,7 @@ export function toPayload(f: ExpenseForm, baseCurrency: string, members: Member[
     ...(f.currency !== baseCurrency && f.fxRateEdited ? { fxRate: f.fxRate.trim() } : {}),
     spentAt: fromDateInput(f.date),
     category: f.category,
+    note: f.note.trim() || null,
     payers: f.multiPayer
       ? members
           .map((m) => ({ memberId: m.id, amount: resolveAmount(f.payerAmounts[m.id] ?? '', f.currency) }))

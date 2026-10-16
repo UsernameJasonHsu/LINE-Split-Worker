@@ -1036,3 +1036,64 @@ textarea:focus {
 .split-row .split-label {
   min-width: 0;
 }
+
+/* Notes in the expense list */
+.list-note {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Audit log */
+.audit-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 16px;
+}
+
+.audit-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.audit-create {
+  color: var(--positive);
+}
+
+.audit-delete {
+  color: var(--negative);
+}
+
+.audit-row .list-main {
+  gap: 4px;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.audit-details {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.audit-time {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.center {
+  text-align: center;
+}

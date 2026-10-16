@@ -23,6 +23,7 @@ function expense(
     id,
     title,
     category,
+    note: null,
     currency: 'TWD',
     amountMinor: total,
     fxRate: '1',
@@ -65,6 +66,11 @@ describe('filterExpenses', () => {
   it('filters by category, including uncategorised', () => {
     expect(ids(filterExpenses(expenses, { ...all, category: 'food' }, 'a'))).toEqual(['1', '5']);
     expect(ids(filterExpenses(expenses, { ...all, category: 'none' }, 'a'))).toEqual(['4']);
+  });
+
+  it('also searches notes', () => {
+    const withNote = [...expenses, { ...expenses[0]!, id: '6', title: '晚餐', note: '含 Service charge' }];
+    expect(ids(filterExpenses(withNote, { ...all, query: 'service' }, 'a'))).toEqual(['6']);
   });
 
   it('searches titles case-insensitively and combines filters', () => {

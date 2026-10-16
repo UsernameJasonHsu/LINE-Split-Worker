@@ -34,7 +34,9 @@ const toDto = (r: SettlementRow): SettlementDto => ({
 
 export async function listSettlements(db: D1Database, ledgerId: string): Promise<SettlementDto[]> {
   const { results } = await db
-    .prepare('SELECT * FROM settlements WHERE ledger_id = ? AND deleted_at IS NULL ORDER BY settled_at DESC, created_at DESC')
+    .prepare(
+      'SELECT * FROM settlements WHERE ledger_id = ? AND deleted_at IS NULL ORDER BY settled_at DESC, created_at DESC',
+    )
     .bind(ledgerId)
     .all<SettlementRow>();
   return results.map(toDto);
@@ -88,13 +90,25 @@ export async function createSettlement(
 }
 
 export async function deleteSettlement(db: D1Database, ledger: LedgerRow, actor: MemberRow, id: string): Promise<void> {
+  const before = await db
+    .prepare('SELECT * FROM settlements WHERE id = ? AND ledger_id = ? AND deleted_at IS NULL')
+    .bind(id, ledger.id)
+    .first<SettlementRow>();
+  if (!before) throw new HttpError(404, 'Settlement not found');
   const [result] = await db.batch([
     db
       .prepare('UPDATE settlements SET deleted_at = ? WHERE id = ? AND ledger_id = ? AND deleted_at IS NULL')
       .bind(Date.now(), id, ledger.id),
     auditStatement(
       db,
-      { ledgerId: ledger.id, actorMemberId: actor.id, action: 'delete', entity: 'settlement', entityId: id },
+      {
+        ledgerId: ledger.id,
+        actorMemberId: actor.id,
+        action: 'delete',
+        entity: 'settlement',
+        entityId: id,
+        before: toDto(before),
+      },
       { sql: 'changes() > 0', params: [] },
     ),
   ]);

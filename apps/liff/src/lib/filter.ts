@@ -12,8 +12,7 @@ export interface ExpenseFilter {
 
 export const DEFAULT_FILTER: ExpenseFilter = { query: '', scope: 'all', category: 'all' };
 
-export const isFilterActive = (f: ExpenseFilter) =>
-  f.query.trim() !== '' || f.scope !== 'all' || f.category !== 'all';
+export const isFilterActive = (f: ExpenseFilter) => f.query.trim() !== '' || f.scope !== 'all' || f.category !== 'all';
 
 export function filterExpenses(expenses: Expense[], f: ExpenseFilter, meId: string): Expense[] {
   const query = f.query.trim().toLowerCase();
@@ -22,6 +21,6 @@ export function filterExpenses(expenses: Expense[], f: ExpenseFilter, meId: stri
     if (f.scope === 'paidByMe' && !paid) return false;
     if (f.scope === 'mine' && !paid && !e.shares.some((s) => s.memberId === meId)) return false;
     if (f.category === 'none' ? e.category !== null : f.category !== 'all' && e.category !== f.category) return false;
-    return query === '' || e.title.toLowerCase().includes(query);
+    return query === '' || e.title.toLowerCase().includes(query) || (e.note ?? '').toLowerCase().includes(query);
   });
 }

@@ -35,6 +35,7 @@ export interface Expense {
   baseAmountMinor: number;
   splitType: SplitType;
   category: string | null;
+  note: string | null;
   spentAt: number;
   createdBy: string;
   createdAt: number;
@@ -58,12 +59,45 @@ export interface ExpenseBody {
   fxRate?: string;
   spentAt?: number;
   category?: string | null;
+  note?: string | null;
   payers: { memberId: string; amount: string }[];
   split:
     | { type: 'equal'; memberIds: string[] }
     | { type: 'weights'; items: { memberId: string; weight: number }[] }
     | { type: 'exact'; items: { memberId: string; amount: string }[] }
     | { type: 'fixed_rest'; fixed: { memberId: string; amount: string }[]; restMemberIds: string[] };
+}
+
+export interface ExpenseSnapshot {
+  title: string;
+  currency: string;
+  amountMinor: number;
+  baseAmountMinor: number;
+  fxRate: string;
+  category: string | null;
+  note: string | null;
+  splitType: SplitType | null;
+  spentAt: number | null;
+  payers: { memberId: string; amountMinor: number }[];
+  /** null for legacy entries recorded before shares were snapshotted. */
+  shares: { memberId: string; shareMinor: number }[] | null;
+}
+
+export interface SettlementSnapshot {
+  fromMemberId: string;
+  toMemberId: string;
+  amountMinor: number;
+}
+
+export interface AuditEntry {
+  id: number;
+  at: number;
+  actorMemberId: string | null;
+  action: 'create' | 'update' | 'delete';
+  entity: 'expense' | 'settlement';
+  entityId: string;
+  before: ExpenseSnapshot | SettlementSnapshot | null;
+  after: ExpenseSnapshot | SettlementSnapshot | null;
 }
 
 export interface Summary {
@@ -185,6 +219,7 @@ export function createApi(getIdToken: () => string | null, ledgerId: string) {
   return {
     ...createAccountApi(getIdToken),
     join: () => request<LedgerView>('POST', `${base}/join`),
+    audit: () => request<{ baseCurrency: string; entries: AuditEntry[] }>('GET', `${base}/audit`),
     history: async () => (await request<{ ledgers: GroupLedger[] }>('GET', `${base}/history`)).ledgers,
     closeLedger: () => request<LedgerView>('POST', `${base}/close`),
     startNextLedger: (name: string, memberIds: string[]) =>

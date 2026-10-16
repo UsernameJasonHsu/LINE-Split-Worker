@@ -160,6 +160,17 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
             </div>
           </div>
 
+          <label className="field">
+            <span>備註（選填）</span>
+            <textarea
+              value={form.note}
+              onChange={(e) => set({ note: e.target.value })}
+              placeholder="例如：含一成服務費、小孩半價"
+              maxLength={500}
+              rows={2}
+            />
+          </label>
+
           <div className="field">
             <span>金額</span>
             <div className="amount-row">

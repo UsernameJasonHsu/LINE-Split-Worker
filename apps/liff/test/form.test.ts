@@ -151,6 +151,12 @@ describe('calculator and category in the payload', () => {
     expect(validate(form({ amount: '5/0' }), 'TWD', members)).toMatchObject({ ok: false, error: '請輸入有效金額' });
   });
 
+  it('sends a trimmed note, or null when blank', () => {
+    expect(toPayload(form({ amount: '1', note: '  含服務費 ' }), 'TWD', members).note).toBe('含服務費');
+    expect(toPayload(form({ amount: '1', note: '   ' }), 'TWD', members).note).toBeNull();
+    expect(formFromExpense({ ...({} as Expense), splitType: 'equal', currency: 'TWD', amountMinor: 1, fxRate: '1', spentAt: 0, title: 'x', note: '備註', payers: [], shares: [] }, members).note).toBe('備註');
+  });
+
   it('sends the category (null when none)', () => {
     expect(toPayload(form({ amount: '1', category: 'food' }), 'TWD', members).category).toBe('food');
     expect(toPayload(form({ amount: '1' }), 'TWD', members).category).toBeNull();
@@ -241,6 +247,7 @@ describe('formFromExpense', () => {
     const expense: Expense = {
       id: 'e1',
       title: 'Hotel',
+      note: null,
       currency: 'USD',
       amountMinor: 10050,
       fxRate: '32.5',

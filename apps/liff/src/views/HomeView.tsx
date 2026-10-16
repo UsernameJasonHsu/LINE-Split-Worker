@@ -191,6 +191,7 @@ export function HomeView(props: ViewProps) {
                             ' · 與我無關'
                           )}
                         </span>
+                        {e.note && <span className="list-note small">📝 {e.note}</span>}
                       </span>
                       <span className="list-side">
                         <Money minor={e.amountMinor} currency={e.currency} />
@@ -210,6 +211,9 @@ export function HomeView(props: ViewProps) {
       )}
 
       <footer className="page-links">
+        <button type="button" className="link-button" onClick={() => navigate({ name: 'audit' })}>
+          🕘 修改紀錄
+        </button>
         <button type="button" className="link-button" onClick={() => navigate({ name: 'feedback' })}>
           💬 意見回饋
         </button>

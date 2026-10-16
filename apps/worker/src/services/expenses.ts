@@ -15,6 +15,7 @@ export interface ExpenseDto {
   baseAmountMinor: number;
   splitType: Split['type'];
   category: string | null;
+  note: string | null;
   spentAt: number;
   createdBy: string;
   createdAt: number;
@@ -42,6 +43,7 @@ interface ExpenseRow {
   base_amount_minor: number;
   split_type: Split['type'];
   category: string | null;
+  note: string | null;
   spent_at: number;
   created_by: string;
   created_at: number;
@@ -76,6 +78,7 @@ function toDto(row: ExpenseRow, payers: PayerRow[], shares: ShareRow[]): Expense
     baseAmountMinor: row.base_amount_minor,
     splitType: row.split_type,
     category: row.category,
+    note: row.note,
     spentAt: row.spent_at,
     createdBy: row.created_by,
     createdAt: row.created_at,
@@ -110,16 +113,16 @@ export async function listExpenses(db: D1Database, ledgerId: string): Promise<Ex
   const live = 'JOIN expenses e ON e.id = x.expense_id WHERE e.ledger_id = ? AND e.deleted_at IS NULL ORDER BY x.rowid';
   const [expenses, payers, shares] = await db.batch([
     db
-      .prepare('SELECT * FROM expenses WHERE ledger_id = ? AND deleted_at IS NULL ORDER BY spent_at DESC, created_at DESC')
+      .prepare(
+        'SELECT * FROM expenses WHERE ledger_id = ? AND deleted_at IS NULL ORDER BY spent_at DESC, created_at DESC',
+      )
       .bind(ledgerId),
     db.prepare(`SELECT x.* FROM expense_payers x ${live}`).bind(ledgerId),
     db.prepare(`SELECT x.* FROM expense_shares x ${live}`).bind(ledgerId),
   ]);
   const payersBy = groupBy(payers!.results as PayerRow[]);
   const sharesBy = groupBy(shares!.results as ShareRow[]);
-  return (expenses!.results as ExpenseRow[]).map((e) =>
-    toDto(e, payersBy.get(e.id) ?? [], sharesBy.get(e.id) ?? []),
-  );
+  return (expenses!.results as ExpenseRow[]).map((e) => toDto(e, payersBy.get(e.id) ?? [], sharesBy.get(e.id) ?? []));
 }
 
 export async function getExpense(db: D1Database, ledgerId: string, id: string): Promise<ExpenseDto | null> {
@@ -169,10 +172,7 @@ async function prepareExpense(
   previous?: ExpenseDto,
 ): Promise<PreparedExpense> {
   const known = new Set(members.map((m) => m.id));
-  const referenced = [
-    ...body.payers.map((p) => p.memberId),
-    ...splitMemberIds(body.split),
-  ];
+  const referenced = [...body.payers.map((p) => p.memberId), ...splitMemberIds(body.split)];
   const unknown = referenced.find((id) => !known.has(id));
   if (unknown) throw new HttpError(400, `Unknown member: ${unknown}`);
 
@@ -237,6 +237,56 @@ async function prepareExpense(
   }
 }
 
+const noteOf = (body: ExpenseBody) => body.note?.trim() || null;
+
+/** What the audit log records for an expense: the computed result, not the raw request. */
+export interface ExpenseSnapshot {
+  title: string;
+  currency: string;
+  amountMinor: number;
+  baseAmountMinor: number;
+  fxRate: string;
+  category: string | null;
+  note: string | null;
+  splitType: Split['type'] | null;
+  spentAt: number | null;
+  payers: { memberId: string; amountMinor: number }[];
+  /** null for legacy entries recorded before shares were snapshotted. */
+  shares: { memberId: string; shareMinor: number }[] | null;
+}
+
+function snapshotOf(body: ExpenseBody, computed: ComputedExpense, spentAt: number): ExpenseSnapshot {
+  return {
+    title: body.title,
+    currency: computed.currency,
+    amountMinor: computed.amountMinor,
+    baseAmountMinor: computed.baseAmountMinor,
+    fxRate: computed.fxRate,
+    category: body.category ?? null,
+    note: noteOf(body),
+    splitType: body.split.type,
+    spentAt,
+    payers: computed.payers.map(({ memberId, amountMinor }) => ({ memberId, amountMinor })),
+    shares: computed.shares.map(({ memberId, shareMinor }) => ({ memberId, shareMinor })),
+  };
+}
+
+export function snapshotFromDto(e: ExpenseDto): ExpenseSnapshot {
+  return {
+    title: e.title,
+    currency: e.currency,
+    amountMinor: e.amountMinor,
+    baseAmountMinor: e.baseAmountMinor,
+    fxRate: e.fxRate,
+    category: e.category,
+    note: e.note,
+    splitType: e.splitType,
+    spentAt: e.spentAt,
+    payers: e.payers.map(({ memberId, amountMinor }) => ({ memberId, amountMinor })),
+    shares: e.shares.map(({ memberId, shareMinor }) => ({ memberId, shareMinor })),
+  };
+}
+
 const PAYER_COLUMNS = 'expense_id, member_id, amount_minor, base_amount_minor';
 const SHARE_COLUMNS = 'expense_id, member_id, split_value, in_rest, share_minor, base_share_minor';
 
@@ -257,8 +307,8 @@ export async function createExpense(
     db
       .prepare(
         `INSERT INTO expenses (id, ledger_id, title, currency, amount_minor, fx_rate, fx_source, base_amount_minor,
-           split_type, category, spent_at, created_by, created_at, updated_at, revision)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           split_type, category, note, spent_at, created_by, created_at, updated_at, revision)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         id,
@@ -271,6 +321,7 @@ export async function createExpense(
         computed.baseAmountMinor,
         body.split.type,
         body.category ?? null,
+        noteOf(body),
         body.spentAt ?? now,
         actor.id,
         now,
@@ -294,7 +345,7 @@ export async function createExpense(
       action: 'create',
       entity: 'expense',
       entityId: id,
-      after: body,
+      after: snapshotOf(body, computed, body.spentAt ?? now),
     }),
   ]);
   return (await getExpense(db, ledger.id, id))!;
@@ -324,7 +375,7 @@ export async function updateExpense(
     db
       .prepare(
         `UPDATE expenses SET title = ?, currency = ?, amount_minor = ?, fx_rate = ?, fx_source = ?,
-           base_amount_minor = ?, split_type = ?, category = ?, spent_at = ?, updated_at = ?, revision = ?
+           base_amount_minor = ?, split_type = ?, category = ?, note = ?, spent_at = ?, updated_at = ?, revision = ?
          WHERE id = ? AND ledger_id = ? AND revision = ? AND deleted_at IS NULL`,
       )
       .bind(
@@ -336,6 +387,7 @@ export async function updateExpense(
         computed.baseAmountMinor,
         body.split.type,
         body.category ?? null,
+        noteOf(body),
         body.spentAt ?? before.spentAt,
         Date.now(),
         newRevision,
@@ -358,7 +410,15 @@ export async function updateExpense(
     }),
     auditStatement(
       db,
-      { ledgerId: ledger.id, actorMemberId: actor.id, action: 'update', entity: 'expense', entityId: id, before, after: body },
+      {
+        ledgerId: ledger.id,
+        actorMemberId: actor.id,
+        action: 'update',
+        entity: 'expense',
+        entityId: id,
+        before: snapshotFromDto(before),
+        after: snapshotOf(body, computed, body.spentAt ?? before.spentAt),
+      },
       guard,
     ),
   ]);
@@ -378,7 +438,14 @@ export async function deleteExpense(db: D1Database, ledger: LedgerRow, actor: Me
       .bind(Date.now(), id, ledger.id),
     auditStatement(
       db,
-      { ledgerId: ledger.id, actorMemberId: actor.id, action: 'delete', entity: 'expense', entityId: id, before },
+      {
+        ledgerId: ledger.id,
+        actorMemberId: actor.id,
+        action: 'delete',
+        entity: 'expense',
+        entityId: id,
+        before: snapshotFromDto(before),
+      },
       { sql: 'changes() > 0', params: [] },
     ),
   ]);

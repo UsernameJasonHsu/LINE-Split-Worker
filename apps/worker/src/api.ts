@@ -43,6 +43,7 @@ import {
   toPublicFeedback,
   updateFeedback,
 } from './services/feedback';
+import { listAudit } from './services/audit';
 import { getPaymentInfo, setPaymentInfo } from './services/payments';
 import { getUsage } from './services/usage';
 import { createSettlement, deleteSettlement, getSummary, listSettlements } from './services/settlements';
@@ -141,6 +142,12 @@ api.post('/ledgers/:ledgerId/join', async (c) => {
 });
 
 api.get('/ledgers/:ledgerId', async (c) => c.json(await ledgerView(c.env.DB, await requireMember(c))));
+
+/** Change history of expenses and repayments; readable by every member, open or closed. */
+api.get('/ledgers/:ledgerId/audit', async (c) => {
+  const { ledger } = await requireMember(c);
+  return c.json({ baseCurrency: ledger.base_currency, entries: await listAudit(c.env.DB, ledger.id) });
+});
 
 api.get('/ledgers/:ledgerId/history', async (c) => {
   const { ledger } = await requireMember(c);
