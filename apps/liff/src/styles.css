@@ -331,7 +331,8 @@ select {
 
 .field-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …) lets columns shrink below their content's intrinsic width. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -343,6 +344,24 @@ select {
   border-radius: 10px;
   background: var(--surface-2);
   padding: 8px 12px;
+}
+
+select {
+  text-overflow: ellipsis;
+}
+
+/* iOS/WebView give date inputs an intrinsic min-width that ignores width: 100%. */
+input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  line-height: 26px;
+}
+
+input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
 }
 
 input:focus,
