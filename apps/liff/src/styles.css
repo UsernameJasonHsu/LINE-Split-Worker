@@ -1002,3 +1002,37 @@ textarea:focus {
   border-radius: 4px;
   background: var(--brand);
 }
+
+/* Four split tabs: equal widths regardless of count */
+.segmented {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+.segmented button {
+  padding: 8px 4px;
+  white-space: nowrap;
+}
+
+.split-hint {
+  margin: 0;
+  color: var(--muted);
+}
+
+.split-hint strong {
+  color: var(--text);
+}
+
+.rest-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.split-row .split-label {
+  min-width: 0;
+}

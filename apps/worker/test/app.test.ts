@@ -480,6 +480,44 @@ describe('expenses and settlement flow', () => {
     });
   });
 
+  it('splits fixed amounts plus an equal share of the rest, and round-trips it', async () => {
+    const { ledgerId, alice, bob } = await setupLedger();
+    const carol = (await api('POST', `/ledgers/${ledgerId}/join`, 'token-eve')).body.meMemberId as string;
+    const body = {
+      title: '飯店',
+      currency: 'TWD',
+      amount: '12000',
+      payers: [{ memberId: alice, amount: '12000' }],
+      split: { type: 'fixed_rest', fixed: [{ memberId: alice, amount: '2000' }], restMemberIds: [alice, bob, carol] },
+    };
+    const created = await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', body);
+    expect(created.status).toBe(201);
+    // rest 10000 / 3 = 3334, 3333, 3333; alice also has 2000 fixed
+    expect(created.body.splitType).toBe('fixed_rest');
+    expect(created.body.shares.map((s: any) => [s.memberId, s.splitValue, s.inRest, s.shareMinor])).toEqual([
+      [alice, 2000, true, 5334],
+      [bob, null, true, 3333],
+      [carol, null, true, 3333],
+    ]);
+
+    // Bob only owes a fixed amount; Alice and Carol split the rest.
+    const updated = await api('PUT', `/ledgers/${ledgerId}/expenses/${created.body.id}`, 'token-alice', {
+      ...body,
+      split: { type: 'fixed_rest', fixed: [{ memberId: bob, amount: '5000' }], restMemberIds: [alice, carol] },
+      revision: created.body.revision,
+    });
+    expect(updated.body.shares.map((s: any) => [s.memberId, s.splitValue, s.inRest, s.shareMinor])).toEqual([
+      [bob, 5000, false, 5000],
+      [alice, null, true, 3500],
+      [carol, null, true, 3500],
+    ]);
+
+    const bad = (split: unknown) => api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', { ...body, split });
+    expect((await bad({ type: 'fixed_rest', fixed: [{ memberId: alice, amount: '13000' }], restMemberIds: [bob] })).status).toBe(400);
+    expect((await bad({ type: 'fixed_rest', fixed: [{ memberId: alice, amount: '1000' }], restMemberIds: [] })).status).toBe(400);
+    expect((await bad({ type: 'fixed_rest', fixed: [], restMemberIds: ['ghost'] })).body.error).toMatch(/unknown member/i);
+  });
+
   it('stores a known category and rejects unknown ones', async () => {
     const { ledgerId, alice } = await setupLedger();
     const body = {

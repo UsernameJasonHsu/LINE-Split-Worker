@@ -4,7 +4,16 @@ import { assertSafeInteger, convertMinor, decimalsOf, isUnitRate } from './curre
 export type Split =
   | { type: 'equal'; memberIds: string[] }
   | { type: 'weights'; items: { memberId: string; weight: number }[] }
-  | { type: 'exact'; items: { memberId: string; amountMinor: number }[] };
+  | { type: 'exact'; items: { memberId: string; amountMinor: number }[] }
+  /**
+   * Some members owe fixed amounts; whatever is left is split equally among
+   * `restMemberIds`. A member may appear in both (fixed amount + equal share).
+   */
+  | {
+      type: 'fixed_rest';
+      fixed: { memberId: string; amountMinor: number }[];
+      restMemberIds: string[];
+    };
 
 export interface ExpenseInput {
   currency: string;
@@ -70,6 +79,32 @@ function computeShareMinors(amountMinor: number, split: Split): { memberId: stri
         throw new Error(`Split amounts sum to ${sum}, expected ${amountMinor}`);
       }
       return split.items.map(({ memberId, amountMinor: minor }) => ({ memberId, minor }));
+    }
+    case 'fixed_rest': {
+      assertUniqueMembers(split.fixed.map((x) => x.memberId), 'Fixed amounts');
+      assertUniqueMembers(split.restMemberIds, 'Remaining members');
+      let fixedSum = 0;
+      for (const { amountMinor: a } of split.fixed) {
+        assertSafeInteger(a, 'fixed amount');
+        if (a < 0) throw new Error(`Fixed amount must be non-negative, got ${a}`);
+        fixedSum += a;
+      }
+      if (fixedSum > amountMinor) {
+        throw new Error(`Fixed amounts ${fixedSum} exceed the total ${amountMinor}`);
+      }
+      const rest = amountMinor - fixedSum;
+      if (rest > 0 && split.restMemberIds.length === 0) {
+        throw new Error(`Remaining ${rest} must be split among at least one member`);
+      }
+
+      const shares = new Map<string, number>();
+      for (const { memberId, amountMinor: a } of split.fixed) shares.set(memberId, a);
+      if (split.restMemberIds.length > 0) {
+        const parts = allocate(rest, split.restMemberIds.map(() => 1));
+        split.restMemberIds.forEach((id, i) => shares.set(id, (shares.get(id) ?? 0) + parts[i]!));
+      }
+      if (shares.size === 0) throw new Error('Split must include at least one member');
+      return [...shares].map(([memberId, minor]) => ({ memberId, minor }));
     }
   }
 }

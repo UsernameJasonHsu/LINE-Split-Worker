@@ -5,12 +5,13 @@ import { errorMessage } from '../api';
 import { navigate, type ViewProps } from '../App';
 import { Avatar, Money, TopBar } from '../components';
 import { CATEGORY_META, EXPENSE_CATEGORIES } from '../lib/categories';
-import { emptyForm, formFromExpense, toPayload, validate, type ExpenseForm } from '../lib/form';
+import { emptyForm, fixedRestRemainder, formFromExpense, toPayload, validate, type ExpenseForm } from '../lib/form';
 
 const SPLIT_TABS = [
   { type: 'equal', label: '均分' },
   { type: 'weights', label: '份數' },
   { type: 'exact', label: '指定金額' },
+  { type: 'fixed_rest', label: '部分指定' },
 ] as const;
 
 export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewProps & { expenseId: string | null }) {
@@ -107,6 +108,9 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
   const toggle = (id: string) =>
     set({ equalIds: form.equalIds.includes(id) ? form.equalIds.filter((x) => x !== id) : [...form.equalIds, id] });
   const allSelected = form.equalIds.length === members.length;
+  const toggleRest = (id: string) =>
+    set({ restIds: form.restIds.includes(id) ? form.restIds.filter((x) => x !== id) : [...form.restIds, id] });
+  const remainder = form.splitType === 'fixed_rest' ? fixedRestRemainder(form, members) : null;
 
   // Switching to several payers starts from "the single payer paid everything".
   const togglePayerMode = () =>
@@ -277,6 +281,19 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
             </button>
           )}
 
+          {form.splitType === 'fixed_rest' && (
+            <p className="split-hint small">
+              先填有指定金額的人，剩下的由勾選「平分」的人均分。
+              {remainder !== null && remainder >= 0 && (
+                <>
+                  <br />
+                  剩餘 <strong>{formatMoney(remainder, form.currency)}</strong>
+                  {form.restIds.length > 0 ? ` 由 ${form.restIds.length} 人平分` : '，尚未勾選平分的人'}
+                </>
+              )}
+            </p>
+          )}
+
           <ul className="list">
             {members.map((m) => {
               const share = shareOf.get(m.id);
@@ -314,6 +331,26 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                       currency={form.currency}
                       ariaLabel={`${m.displayName} 的金額`}
                     />
+                  )}
+                  {form.splitType === 'fixed_rest' && (
+                    <>
+                      <AmountInput
+                        className="exact-input"
+                        value={form.fixed[m.id] ?? ''}
+                        onChange={(v) => setForm((f) => ({ ...f, fixed: { ...f.fixed, [m.id]: v } }))}
+                        currency={form.currency}
+                        placeholder="指定"
+                        ariaLabel={`${m.displayName} 的指定金額`}
+                      />
+                      <label className="rest-toggle">
+                        <input
+                          type="checkbox"
+                          checked={form.restIds.includes(m.id)}
+                          onChange={() => toggleRest(m.id)}
+                        />
+                        <span>平分</span>
+                      </label>
+                    </>
                   )}
                   <span className="split-share">{share ? formatMoney(share.shareMinor, form.currency) : '—'}</span>
                 </li>

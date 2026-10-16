@@ -88,6 +88,79 @@ describe('computeExpense', () => {
     expect(r.shares.map((s) => s.shareMinor)).toEqual([120, 380]);
   });
 
+  describe('fixed amounts with the rest split equally', () => {
+    const base = {
+      currency: 'TWD',
+      amountMinor: 12000,
+      fxRate: '1',
+      baseCurrency: 'TWD',
+      payers: [{ memberId: 'a', amountMinor: 12000 }],
+    };
+
+    it('gives fixed members their amount and splits the rest', () => {
+      const r = computeExpense({
+        ...base,
+        split: { type: 'fixed_rest', fixed: [{ memberId: 'a', amountMinor: 5000 }], restMemberIds: ['b', 'c', 'd'] },
+      });
+      expect(r.shares.map((s) => [s.memberId, s.shareMinor])).toEqual([
+        ['a', 5000],
+        ['b', 2334],
+        ['c', 2333],
+        ['d', 2333],
+      ]);
+    });
+
+    it('lets a member have a fixed amount and also share the rest', () => {
+      const r = computeExpense({
+        ...base,
+        split: { type: 'fixed_rest', fixed: [{ memberId: 'a', amountMinor: 2000 }], restMemberIds: ['a', 'b'] },
+      });
+      // rest 10000 → 5000 each; a = 2000 + 5000
+      expect(r.shares.map((s) => [s.memberId, s.shareMinor])).toEqual([
+        ['a', 7000],
+        ['b', 5000],
+      ]);
+    });
+
+    it('allows fixed amounts that use up the whole total', () => {
+      const r = computeExpense({
+        ...base,
+        split: {
+          type: 'fixed_rest',
+          fixed: [
+            { memberId: 'a', amountMinor: 7000 },
+            { memberId: 'b', amountMinor: 5000 },
+          ],
+          restMemberIds: [],
+        },
+      });
+      expect(r.shares.map((s) => s.shareMinor)).toEqual([7000, 5000]);
+    });
+
+    it('converts to the base currency without losing a unit', () => {
+      const r = computeExpense({
+        currency: 'JPY',
+        amountMinor: 10000,
+        fxRate: '0.2153',
+        baseCurrency: 'TWD',
+        payers: [{ memberId: 'a', amountMinor: 10000 }],
+        split: { type: 'fixed_rest', fixed: [{ memberId: 'a', amountMinor: 4000 }], restMemberIds: ['b', 'c'] },
+      });
+      expect(r.shares.map((s) => s.shareMinor)).toEqual([4000, 3000, 3000]);
+      expect(r.shares.reduce((s, x) => s + x.baseShareMinor, 0)).toBe(r.baseAmountMinor);
+    });
+
+    it('rejects fixed amounts above the total, a rest nobody shares, and duplicates', () => {
+      const split = (fixed: { memberId: string; amountMinor: number }[], restMemberIds: string[]) => () =>
+        computeExpense({ ...base, split: { type: 'fixed_rest', fixed, restMemberIds } });
+      expect(split([{ memberId: 'a', amountMinor: 12001 }], ['b'])).toThrow(/exceed/i);
+      expect(split([{ memberId: 'a', amountMinor: 5000 }], [])).toThrow(/remaining/i);
+      expect(split([], [])).toThrow();
+      expect(split([{ memberId: 'a', amountMinor: 1 }, { memberId: 'a', amountMinor: 2 }], ['b'])).toThrow(/duplicate/i);
+      expect(split([{ memberId: 'a', amountMinor: -1 }], ['b'])).toThrow();
+    });
+  });
+
   it('rejects payers that do not sum to the amount', () => {
     expect(() =>
       computeExpense({

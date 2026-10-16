@@ -23,7 +23,7 @@ export interface LedgerView {
   meMemberId: string;
 }
 
-export type SplitType = 'equal' | 'weights' | 'exact';
+export type SplitType = 'equal' | 'weights' | 'exact' | 'fixed_rest';
 
 export interface Expense {
   id: string;
@@ -41,7 +41,14 @@ export interface Expense {
   updatedAt: number;
   revision: string;
   payers: { memberId: string; amountMinor: number; baseAmountMinor: number }[];
-  shares: { memberId: string; splitValue: number | null; shareMinor: number; baseShareMinor: number }[];
+  shares: {
+    memberId: string;
+    splitValue: number | null;
+    /** fixed_rest only: whether the member shares the remainder. */
+    inRest?: boolean | null;
+    shareMinor: number;
+    baseShareMinor: number;
+  }[];
 }
 
 export interface ExpenseBody {
@@ -55,7 +62,8 @@ export interface ExpenseBody {
   split:
     | { type: 'equal'; memberIds: string[] }
     | { type: 'weights'; items: { memberId: string; weight: number }[] }
-    | { type: 'exact'; items: { memberId: string; amount: string }[] };
+    | { type: 'exact'; items: { memberId: string; amount: string }[] }
+    | { type: 'fixed_rest'; fixed: { memberId: string; amount: string }[]; restMemberIds: string[] };
 }
 
 export interface Summary {

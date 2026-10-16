@@ -16,6 +16,11 @@ const split = z.discriminatedUnion('type', [
     type: z.literal('exact'),
     items: z.array(z.object({ memberId, amount: decimal })).min(1).max(100),
   }),
+  z.object({
+    type: z.literal('fixed_rest'),
+    fixed: z.array(z.object({ memberId, amount: decimal })).max(100),
+    restMemberIds: z.array(memberId).max(100),
+  }),
 ]);
 
 export const expenseSchema = z.object({

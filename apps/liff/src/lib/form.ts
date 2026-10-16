@@ -31,6 +31,10 @@ export interface ExpenseForm {
   equalIds: string[];
   weights: Record<string, number>;
   exact: Record<string, string>;
+  /** fixed_rest: fixed amount per member (blank = none). */
+  fixed: Record<string, string>;
+  /** fixed_rest: members who split the remainder equally. */
+  restIds: string[];
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -45,7 +49,6 @@ export function fromDateInput(s: string): number {
   const [y = 1970, m = 1, d = 1] = s.split('-').map(Number);
   return new Date(y, m - 1, d, 12).getTime();
 }
-
 
 export function emptyForm(members: Member[], meId: string, baseCurrency: string, now = Date.now()): ExpenseForm {
   return {
@@ -62,6 +65,8 @@ export function emptyForm(members: Member[], meId: string, baseCurrency: string,
     equalIds: members.map((m) => m.id),
     weights: Object.fromEntries(members.map((m) => [m.id, 1])),
     exact: {},
+    fixed: {},
+    restIds: members.map((m) => m.id),
     category: null,
   };
 }
@@ -80,7 +85,8 @@ export function formFromExpense(e: Expense, members: Member[]): ExpenseForm {
         : {},
     splitType: e.splitType,
     category: (e.category as ExpenseCategory | null) ?? null,
-    equalIds: e.splitType === 'equal' ? members.filter((m) => shareOf.has(m.id)).map((m) => m.id) : members.map((m) => m.id),
+    equalIds:
+      e.splitType === 'equal' ? members.filter((m) => shareOf.has(m.id)).map((m) => m.id) : members.map((m) => m.id),
     weights: Object.fromEntries(
       members.map((m) => [m.id, e.splitType === 'weights' ? (shareOf.get(m.id)?.splitValue ?? 0) : 1]),
     ),
@@ -88,6 +94,12 @@ export function formFromExpense(e: Expense, members: Member[]): ExpenseForm {
       e.splitType === 'exact'
         ? Object.fromEntries(e.shares.map((s) => [s.memberId, formatMinor(s.shareMinor, e.currency)]))
         : {},
+    ...(e.splitType === 'fixed_rest' && {
+      fixed: Object.fromEntries(
+        e.shares.filter((s) => s.splitValue !== null).map((s) => [s.memberId, formatMinor(s.splitValue!, e.currency)]),
+      ),
+      restIds: members.filter((m) => shareOf.get(m.id)?.inRest).map((m) => m.id),
+    }),
   };
 }
 
@@ -98,9 +110,7 @@ function splitBody(f: ExpenseForm, members: Member[]): ExpenseBody['split'] {
     case 'weights':
       return {
         type: 'weights',
-        items: members
-          .map((m) => ({ memberId: m.id, weight: f.weights[m.id] ?? 0 }))
-          .filter((i) => i.weight > 0),
+        items: members.map((m) => ({ memberId: m.id, weight: f.weights[m.id] ?? 0 })).filter((i) => i.weight > 0),
       };
     case 'exact':
       return {
@@ -109,6 +119,29 @@ function splitBody(f: ExpenseForm, members: Member[]): ExpenseBody['split'] {
           .map((m) => ({ memberId: m.id, amount: resolveAmount(f.exact[m.id] ?? '', f.currency) }))
           .filter((i) => i.amount !== '' && Number(i.amount) !== 0),
       };
+    case 'fixed_rest':
+      return {
+        type: 'fixed_rest',
+        fixed: members
+          .map((m) => ({ memberId: m.id, amount: resolveAmount(f.fixed[m.id] ?? '', f.currency) }))
+          .filter((i) => i.amount !== '' && Number(i.amount) !== 0),
+        restMemberIds: members.filter((m) => f.restIds.includes(m.id)).map((m) => m.id),
+      };
+  }
+}
+
+/** fixed_rest: amount left after fixed amounts (minor units), or null while input is incomplete. */
+export function fixedRestRemainder(f: ExpenseForm, members: Member[]): number | null {
+  try {
+    const total = toMinor(resolveAmount(f.amount, f.currency), f.currency);
+    let fixed = 0;
+    for (const m of members) {
+      const v = resolveAmount(f.fixed[m.id] ?? '', f.currency);
+      if (v !== '' && Number(v) !== 0) fixed += toMinor(v, f.currency);
+    }
+    return total - fixed;
+  } catch {
+    return null;
   }
 }
 
@@ -167,9 +200,7 @@ function parseParts(
 
 export type ValidationField = 'amount' | 'fx' | 'payers' | 'split';
 
-export type Validation =
-  | { ok: true; computed: ComputedExpense }
-  | { ok: false; error: string; field: ValidationField };
+export type Validation = { ok: true; computed: ComputedExpense } | { ok: false; error: string; field: ValidationField };
 
 /** Live validation and preview of how the expense will be split. */
 export function validate(f: ExpenseForm, baseCurrency: string, members: Member[]): Validation {
@@ -209,10 +240,28 @@ export function validate(f: ExpenseForm, baseCurrency: string, members: Member[]
     });
     if (typeof items === 'string') return fail(items, 'split');
     split = { type: 'exact', items };
+  } else if (body.split.type === 'fixed_rest') {
+    const fixed: { memberId: string; amountMinor: number }[] = [];
+    for (const i of body.split.fixed) {
+      const minor = parseAmount(i.amount, f.currency);
+      if (typeof minor === 'string') return fail(minor, 'split');
+      fixed.push({ memberId: i.memberId, amountMinor: minor });
+    }
+    const rest = amountMinor - fixed.reduce((s, i) => s + i.amountMinor, 0);
+    if (rest < 0) return fail(`指定金額超出總額 ${formatMoney(-rest, f.currency)}`, 'split');
+    if (rest > 0 && body.split.restMemberIds.length === 0) {
+      return fail(`剩餘 ${formatMoney(rest, f.currency)} 請至少勾選一人平分`, 'split');
+    }
+    split = { type: 'fixed_rest', fixed, restMemberIds: body.split.restMemberIds };
   } else {
     split = body.split;
   }
-  const empty = split.type === 'equal' ? split.memberIds.length === 0 : split.items.length === 0;
+  const empty =
+    split.type === 'equal'
+      ? split.memberIds.length === 0
+      : split.type === 'fixed_rest'
+        ? split.fixed.length === 0 && split.restMemberIds.length === 0
+        : split.items.length === 0;
   if (empty) return fail('請至少選擇一位分攤成員', 'split');
 
   try {

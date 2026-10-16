@@ -21,7 +21,15 @@ export interface ExpenseDto {
   updatedAt: number;
   revision: string;
   payers: { memberId: string; amountMinor: number; baseAmountMinor: number }[];
-  shares: { memberId: string; splitValue: number | null; shareMinor: number; baseShareMinor: number }[];
+  shares: {
+    memberId: string;
+    /** Weight (weights), amount (exact) or fixed amount (fixed_rest); null otherwise. */
+    splitValue: number | null;
+    /** fixed_rest only: whether the member shares the remainder. */
+    inRest: boolean | null;
+    shareMinor: number;
+    baseShareMinor: number;
+  }[];
 }
 
 interface ExpenseRow {
@@ -52,6 +60,7 @@ interface ShareRow {
   expense_id: string;
   member_id: string;
   split_value: number | null;
+  in_rest: number | null;
   share_minor: number;
   base_share_minor: number;
 }
@@ -80,6 +89,7 @@ function toDto(row: ExpenseRow, payers: PayerRow[], shares: ShareRow[]): Expense
     shares: shares.map((s) => ({
       memberId: s.member_id,
       splitValue: s.split_value,
+      inRest: s.in_rest === null ? null : s.in_rest === 1,
       shareMinor: s.share_minor,
       baseShareMinor: s.base_share_minor,
     })),
@@ -122,10 +132,28 @@ export async function getExpense(db: D1Database, ledgerId: string, id: string): 
   return row ? toDto(row, payers!.results as PayerRow[], shares!.results as ShareRow[]) : null;
 }
 
+interface ShareMeta {
+  splitValue: number | null;
+  inRest: boolean | null;
+}
+
 interface PreparedExpense {
   computed: ComputedExpense;
   fxSource: ExpenseDto['fxSource'];
-  splitValues: (number | null)[];
+  /** How each member's share was specified, for editing it later. */
+  shareMeta: (memberId: string) => ShareMeta;
+}
+
+function splitMemberIds(split: ExpenseBody['split']): string[] {
+  switch (split.type) {
+    case 'equal':
+      return split.memberIds;
+    case 'weights':
+    case 'exact':
+      return split.items.map((i) => i.memberId);
+    case 'fixed_rest':
+      return [...split.fixed.map((f) => f.memberId), ...split.restMemberIds];
+  }
 }
 
 /**
@@ -143,7 +171,7 @@ async function prepareExpense(
   const known = new Set(members.map((m) => m.id));
   const referenced = [
     ...body.payers.map((p) => p.memberId),
-    ...(body.split.type === 'equal' ? body.split.memberIds : body.split.items.map((i) => i.memberId)),
+    ...splitMemberIds(body.split),
   ];
   const unknown = referenced.find((id) => !known.has(id));
   if (unknown) throw new HttpError(400, `Unknown member: ${unknown}`);
@@ -167,20 +195,27 @@ async function prepareExpense(
   try {
     const { currency, split } = body;
     let coreSplit: Split;
-    let splitValues: (number | null)[];
+    const meta = new Map<string, ShareMeta>();
     switch (split.type) {
       case 'equal':
         coreSplit = split;
-        splitValues = split.memberIds.map(() => null);
         break;
       case 'weights':
         coreSplit = split;
-        splitValues = split.items.map((i) => i.weight);
+        for (const i of split.items) meta.set(i.memberId, { splitValue: i.weight, inRest: null });
         break;
       case 'exact': {
         const items = split.items.map((i) => ({ memberId: i.memberId, amountMinor: toMinor(i.amount, currency) }));
         coreSplit = { type: 'exact', items };
-        splitValues = items.map((i) => i.amountMinor);
+        for (const i of items) meta.set(i.memberId, { splitValue: i.amountMinor, inRest: null });
+        break;
+      }
+      case 'fixed_rest': {
+        const fixed = split.fixed.map((f) => ({ memberId: f.memberId, amountMinor: toMinor(f.amount, currency) }));
+        coreSplit = { type: 'fixed_rest', fixed, restMemberIds: split.restMemberIds };
+        const rest = new Set(split.restMemberIds);
+        for (const f of fixed) meta.set(f.memberId, { splitValue: f.amountMinor, inRest: rest.has(f.memberId) });
+        for (const id of rest) if (!meta.has(id)) meta.set(id, { splitValue: null, inRest: true });
         break;
       }
     }
@@ -192,14 +227,20 @@ async function prepareExpense(
       payers: body.payers.map((p) => ({ memberId: p.memberId, amountMinor: toMinor(p.amount, currency) })),
       split: coreSplit,
     });
-    return { computed, fxSource, splitValues };
+    return {
+      computed,
+      fxSource,
+      shareMeta: (memberId) => meta.get(memberId) ?? { splitValue: null, inRest: null },
+    };
   } catch (err) {
     throw new HttpError(400, (err as Error).message);
   }
 }
 
 const PAYER_COLUMNS = 'expense_id, member_id, amount_minor, base_amount_minor';
-const SHARE_COLUMNS = 'expense_id, member_id, split_value, share_minor, base_share_minor';
+const SHARE_COLUMNS = 'expense_id, member_id, split_value, in_rest, share_minor, base_share_minor';
+
+const inRestValue = (m: ShareMeta) => (m.inRest === null ? null : m.inRest ? 1 : 0);
 
 export async function createExpense(
   db: D1Database,
@@ -208,7 +249,7 @@ export async function createExpense(
   actor: MemberRow,
   body: ExpenseBody,
 ): Promise<ExpenseDto> {
-  const { computed, fxSource, splitValues } = await prepareExpense(db, ledger, members, body);
+  const { computed, fxSource, shareMeta } = await prepareExpense(db, ledger, members, body);
   const id = crypto.randomUUID();
   const now = Date.now();
 
@@ -241,11 +282,12 @@ export async function createExpense(
         .prepare(`INSERT INTO expense_payers (${PAYER_COLUMNS}) VALUES (?, ?, ?, ?)`)
         .bind(id, p.memberId, p.amountMinor, p.baseAmountMinor),
     ),
-    ...computed.shares.map((s, i) =>
-      db
-        .prepare(`INSERT INTO expense_shares (${SHARE_COLUMNS}) VALUES (?, ?, ?, ?, ?)`)
-        .bind(id, s.memberId, splitValues[i] ?? null, s.shareMinor, s.baseShareMinor),
-    ),
+    ...computed.shares.map((s) => {
+      const m = shareMeta(s.memberId);
+      return db
+        .prepare(`INSERT INTO expense_shares (${SHARE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(id, s.memberId, m.splitValue, inRestValue(m), s.shareMinor, s.baseShareMinor);
+    }),
     auditStatement(db, {
       ledgerId: ledger.id,
       actorMemberId: actor.id,
@@ -274,7 +316,7 @@ export async function updateExpense(
 ): Promise<ExpenseDto> {
   const before = await getExpense(db, ledger.id, id);
   if (!before) throw new HttpError(404, 'Expense not found');
-  const { computed, fxSource, splitValues } = await prepareExpense(db, ledger, members, body, before);
+  const { computed, fxSource, shareMeta } = await prepareExpense(db, ledger, members, body, before);
   const newRevision = crypto.randomUUID();
   const guard = { sql: 'EXISTS (SELECT 1 FROM expenses WHERE id = ? AND revision = ?)', params: [id, newRevision] };
 
@@ -308,11 +350,12 @@ export async function updateExpense(
         .prepare(`INSERT INTO expense_payers (${PAYER_COLUMNS}) SELECT ?, ?, ?, ? WHERE ${guard.sql}`)
         .bind(id, p.memberId, p.amountMinor, p.baseAmountMinor, ...guard.params),
     ),
-    ...computed.shares.map((s, i) =>
-      db
-        .prepare(`INSERT INTO expense_shares (${SHARE_COLUMNS}) SELECT ?, ?, ?, ?, ? WHERE ${guard.sql}`)
-        .bind(id, s.memberId, splitValues[i] ?? null, s.shareMinor, s.baseShareMinor, ...guard.params),
-    ),
+    ...computed.shares.map((s) => {
+      const m = shareMeta(s.memberId);
+      return db
+        .prepare(`INSERT INTO expense_shares (${SHARE_COLUMNS}) SELECT ?, ?, ?, ?, ?, ? WHERE ${guard.sql}`)
+        .bind(id, s.memberId, m.splitValue, inRestValue(m), s.shareMinor, s.baseShareMinor, ...guard.params);
+    }),
     auditStatement(
       db,
       { ledgerId: ledger.id, actorMemberId: actor.id, action: 'update', entity: 'expense', entityId: id, before, after: body },

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Expense, Member } from '../src/api';
-import { emptyForm, formFromExpense, fromDateInput, toDateInput, toPayload, validate } from '../src/lib/form';
+import {
+  emptyForm,
+  fixedRestRemainder,
+  formFromExpense,
+  fromDateInput,
+  toDateInput,
+  toPayload,
+  validate,
+} from '../src/lib/form';
 
 const members: Member[] = [
   { id: 'a', displayName: 'Alice', avatarUrl: null, isVirtual: false, paymentInfo: null },
@@ -40,6 +48,76 @@ describe('toPayload', () => {
     expect(toPayload(form({ amount: '9', splitType: 'exact', exact: { a: '9', b: '', c: '0' } }), 'TWD', members).split).toEqual({
       type: 'exact',
       items: [{ memberId: 'a', amount: '9' }],
+    });
+  });
+});
+
+describe('fixed amounts + rest split equally', () => {
+  const fr = (fixed: Record<string, string>, restIds: string[], amount = '12000') =>
+    form({ amount, splitType: 'fixed_rest', fixed, restIds });
+
+  it('builds the payload in member order, skipping blank fixed amounts', () => {
+    expect(toPayload(fr({ c: '', a: '5,000' }, ['c', 'b']), 'TWD', members).split).toEqual({
+      type: 'fixed_rest',
+      fixed: [{ memberId: 'a', amount: '5000' }],
+      restMemberIds: ['b', 'c'],
+    });
+  });
+
+  it('previews fixed + equal rest', () => {
+    const v = validate(fr({ a: '5000' }, ['b', 'c']), 'TWD', members);
+    expect(v.ok && v.computed.shares.map((s) => [s.memberId, s.shareMinor])).toEqual([
+      ['a', 5000],
+      ['b', 3500],
+      ['c', 3500],
+    ]);
+  });
+
+  it('explains problems', () => {
+    const err = (fixed: Record<string, string>, restIds: string[]) => {
+      const v = validate(fr(fixed, restIds), 'TWD', members);
+      return v.ok ? null : v.error;
+    };
+    expect(err({ a: '13000' }, ['b'])).toBe('指定金額超出總額 TWD 1,000');
+    expect(err({ a: '5000' }, [])).toBe('剩餘 TWD 7,000 請至少勾選一人平分');
+    expect(err({ a: '12000' }, [])).toBeNull();
+    expect(err({ a: '1.5' }, ['b'])).toBe('TWD 不能有小數');
+  });
+
+  it('reports the remainder left for equal splitting', () => {
+    expect(fixedRestRemainder(fr({ a: '5000', b: '500*2' }, ['c']), members)).toBe(6000);
+    expect(fixedRestRemainder(fr({}, ['c']), members)).toBe(12000);
+    expect(fixedRestRemainder(fr({ a: 'oops' }, ['c']), members)).toBeNull();
+    expect(fixedRestRemainder(fr({}, ['c'], ''), members)).toBeNull();
+  });
+
+  it('round-trips an expense', () => {
+    const f = formFromExpense(
+      {
+        splitType: 'fixed_rest',
+        currency: 'TWD',
+        amountMinor: 12000,
+        fxRate: '1',
+        spentAt: 0,
+        title: '飯店',
+        category: null,
+        payers: [{ memberId: 'a', amountMinor: 12000, baseAmountMinor: 12000 }],
+        shares: [
+          { memberId: 'a', splitValue: 2000, inRest: true, shareMinor: 5334, baseShareMinor: 5334 },
+          { memberId: 'b', splitValue: 1000, inRest: false, shareMinor: 1000, baseShareMinor: 1000 },
+          { memberId: 'c', splitValue: null, inRest: true, shareMinor: 5666, baseShareMinor: 5666 },
+        ],
+      } as Expense,
+      members,
+    );
+    expect(f).toMatchObject({ splitType: 'fixed_rest', fixed: { a: '2000', b: '1000' }, restIds: ['a', 'c'] });
+    expect(toPayload(f, 'TWD', members).split).toEqual({
+      type: 'fixed_rest',
+      fixed: [
+        { memberId: 'a', amount: '2000' },
+        { memberId: 'b', amount: '1000' },
+      ],
+      restMemberIds: ['a', 'c'],
     });
   });
 });
