@@ -33,6 +33,17 @@ export function TopBar({ title, onBack, action }: { title: string; onBack?: () =
   );
 }
 
+/** Copies to the clipboard, falling back to a prompt where in-app browsers block it. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    window.prompt('請長按複製', text);
+    return false;
+  }
+}
+
 export const formatDate = (ts: number) =>
   new Date(ts).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' });
 

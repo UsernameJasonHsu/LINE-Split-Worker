@@ -612,3 +612,45 @@ textarea:focus {
   padding: 0;
   flex: none;
 }
+
+.payment-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.payment-row + .payment-row {
+  border-top: 1px solid var(--border);
+}
+
+.payment-row .list-main {
+  gap: 4px;
+}
+
+.payment-name {
+  font-weight: 600;
+}
+
+.payment-text {
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.row-actions {
+  display: flex;
+  gap: 12px;
+  flex: none;
+  padding-top: 2px;
+}
+
+.button-pair {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hint {
+  margin: 8px 0 0;
+}

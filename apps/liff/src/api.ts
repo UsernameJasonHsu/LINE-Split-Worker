@@ -119,7 +119,6 @@ export function createApi(getIdToken: () => string | null, ledgerId: string) {
     closeLedger: () => request<LedgerView>('POST', `${base}/close`),
     startNextLedger: (name: string, memberIds: string[]) =>
       request<LedgerView>('POST', `${base}/next`, { name, memberIds }),
-    myPaymentInfo: async () => (await request<{ info: string | null }>('GET', '/api/me/payment-info')).info,
     setMyPaymentInfo: async (info: string) =>
       (await request<{ info: string | null }>('PUT', '/api/me/payment-info', { info })).info,
     patchLedger: (patch: { name?: string; baseCurrency?: string }) => request<LedgerView>('PATCH', base, patch),
