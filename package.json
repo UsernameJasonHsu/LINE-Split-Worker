@@ -1,6 +1,7 @@
 {
   "name": "line-split",
   "private": true,
+  "license": "MIT",
   "workspaces": [
     "packages/*",
     "apps/*"
