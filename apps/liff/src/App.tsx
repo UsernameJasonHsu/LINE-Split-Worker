@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createApi, errorMessage, type Api, type Expense, type LedgerView, type Settlement, type Summary } from './api';
-import { initLiff, ledgerIdFromUrl, liff } from './liff';
+import {
+  createAccountApi,
+  createApi,
+  errorMessage,
+  type AccountApi,
+  type Api,
+  type Expense,
+  type LedgerView,
+  type Settlement,
+  type Summary,
+} from './api';
+import { initLiff, ledgerIdFromUrl, liff, urlParam } from './liff';
+import { AdminFeedbackView } from './views/AdminFeedbackView';
 import { ExpenseFormView } from './views/ExpenseFormView';
+import { FeedbackView } from './views/FeedbackView';
 import { HomeView } from './views/HomeView';
 import { LedgersView } from './views/LedgersView';
 import { SettleView } from './views/SettleView';
@@ -11,19 +23,24 @@ export interface LedgerData {
   expenses: Expense[];
   summary: Summary;
   settlements: Settlement[];
+  isAdmin: boolean;
 }
 
 export type Route =
   | { name: 'home' }
   | { name: 'expense'; id: string | null }
   | { name: 'settle' }
-  | { name: 'ledgers' };
+  | { name: 'ledgers' }
+  | { name: 'feedback' }
+  | { name: 'admin' };
 
 function parseHash(hash: string): Route {
   const m = hash.match(/^#\/expense\/(.+)$/);
   if (m) return { name: 'expense', id: m[1] === 'new' ? null : decodeURIComponent(m[1]!) };
   if (hash === '#/settle') return { name: 'settle' };
   if (hash === '#/ledgers') return { name: 'ledgers' };
+  if (hash === '#/feedback') return { name: 'feedback' };
+  if (hash === '#/admin') return { name: 'admin' };
   return { name: 'home' };
 }
 
@@ -66,7 +83,16 @@ function useHashRoute(): Route {
   return route;
 }
 
-type Boot = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; api: Api };
+type StandalonePage = 'feedback' | 'admin';
+
+type Boot =
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; api: Api }
+  /** Feedback / admin pages opened without a ledger (e.g. from the bot's DM). */
+  | { status: 'standalone'; account: AccountApi; page: StandalonePage };
+
+const isStandalonePage = (v: string | null): v is StandalonePage => v === 'feedback' || v === 'admin';
 
 export function App() {
   const [boot, setBoot] = useState<Boot>({ status: 'loading' });
@@ -82,12 +108,23 @@ export function App() {
         setBoot({ status: 'error', message: 'LINE 初始化失敗，請在 LINE App 中開啟' });
         return;
       }
+      const getToken = () => liff.getIDToken();
       const ledgerId = ledgerIdFromUrl();
+      const page = urlParam('view');
       if (!ledgerId) {
+        if (isStandalonePage(page)) {
+          setBoot({ status: 'standalone', account: createAccountApi(getToken), page });
+          return;
+        }
         setBoot({ status: 'error', message: '請從群組中的「打開帳本」按鈕進入，或在群組輸入「帳本」取得連結' });
         return;
       }
-      setBoot({ status: 'ready', api: createApi(() => liff.getIDToken(), ledgerId) });
+      if (isStandalonePage(page)) {
+        // Deep link into a page of this ledger; drop ?view= so a reload lands on home.
+        history.replaceState(null, '', `${window.location.pathname}?l=${encodeURIComponent(ledgerId)}#/${page}`);
+        window.dispatchEvent(new Event(ROUTE_EVENT));
+      }
+      setBoot({ status: 'ready', api: createApi(getToken, ledgerId) });
     })();
   }, []);
 
@@ -97,8 +134,13 @@ export function App() {
     if (!api) return;
     try {
       const view = await api.join();
-      const [expenses, summary, settlements] = await Promise.all([api.expenses(), api.summary(), api.settlements()]);
-      setData({ view, expenses, summary, settlements });
+      const [expenses, summary, settlements, me] = await Promise.all([
+        api.expenses(),
+        api.summary(),
+        api.settlements(),
+        api.me(),
+      ]);
+      setData({ view, expenses, summary, settlements, isAdmin: me.isAdmin });
     } catch (err) {
       if (!data) setBoot({ status: 'error', message: errorMessage(err) });
       else setToast(errorMessage(err));
@@ -116,13 +158,29 @@ export function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const ctx = useMemo(
-    () => (api && data ? { api, data, reload, notify: setToast } : null),
-    [api, data, reload],
+  const ctx = useMemo(() => (api && data ? { api, data, reload, notify: setToast } : null), [api, data, reload]);
+
+  const toastEl = toast && (
+    <div className="toast" role="status">
+      {toast}
+    </div>
   );
 
   if (boot.status === 'error') return <FullScreenMessage title="無法開啟帳本" body={boot.message} />;
+  if (boot.status === 'standalone') {
+    return (
+      <>
+        {boot.page === 'feedback' ? (
+          <FeedbackView account={boot.account} notify={setToast} />
+        ) : (
+          <AdminFeedbackView account={boot.account} notify={setToast} />
+        )}
+        {toastEl}
+      </>
+    );
+  }
   if (!ctx) return <FullScreenMessage title="載入中…" />;
+  const back = () => navigate({ name: 'home' });
 
   return (
     <>
@@ -130,11 +188,11 @@ export function App() {
       {route.name === 'expense' && <ExpenseFormView key={route.id ?? 'new'} {...ctx} expenseId={route.id} />}
       {route.name === 'settle' && <SettleView {...ctx} />}
       {route.name === 'ledgers' && <LedgersView {...ctx} />}
-      {toast && (
-        <div className="toast" role="status">
-          {toast}
-        </div>
+      {route.name === 'feedback' && (
+        <FeedbackView account={ctx.api} ledgerId={ctx.data.view.ledger.id} notify={setToast} onBack={back} />
       )}
+      {route.name === 'admin' && <AdminFeedbackView account={ctx.api} notify={setToast} onBack={back} />}
+      {toastEl}
     </>
   );
 }

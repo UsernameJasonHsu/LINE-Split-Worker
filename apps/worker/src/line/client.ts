@@ -29,6 +29,11 @@ export class LineClient {
     await this.request('POST', '/v2/bot/message/reply', { replyToken, messages });
   }
 
+  /** Push message; counts against the official account's monthly quota. */
+  async push(to: string, messages: unknown[]): Promise<void> {
+    await this.request('POST', '/v2/bot/message/push', { to, messages });
+  }
+
   async getGroupMemberProfile(groupId: string, userId: string): Promise<LineProfile> {
     const path = `/v2/bot/group/${encodeURIComponent(groupId)}/member/${encodeURIComponent(userId)}`;
     return (await this.request('GET', path)).json<LineProfile>();

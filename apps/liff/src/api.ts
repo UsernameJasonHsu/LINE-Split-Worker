@@ -92,12 +92,30 @@ export class ApiError extends Error {
   }
 }
 
-export type Api = ReturnType<typeof createApi>;
+export type FeedbackCategory = 'bug' | 'idea' | 'other';
+export type FeedbackStatus = 'new' | 'in_progress' | 'done' | 'wont_fix';
 
-export function createApi(getIdToken: () => string | null, ledgerId: string) {
-  const base = `/api/ledgers/${encodeURIComponent(ledgerId)}`;
+export interface Feedback {
+  id: string;
+  category: FeedbackCategory;
+  message: string;
+  status: FeedbackStatus;
+  adminNote: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
 
-  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export interface AdminFeedback extends Feedback {
+  displayName: string;
+  ledgerId: string | null;
+  ledgerName: string | null;
+  context: Record<string, unknown> | null;
+}
+
+type Request = <T>(method: string, path: string, body?: unknown) => Promise<T>;
+
+function makeRequest(getIdToken: () => string | null): Request {
+  return async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const token = getIdToken();
     const res = await fetch(path, {
       method,
@@ -111,16 +129,46 @@ export function createApi(getIdToken: () => string | null, ledgerId: string) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new ApiError(res.status, (data as { error?: string }).error ?? res.statusText);
     return data as T;
-  }
+  };
+}
+
+export type AccountApi = ReturnType<typeof createAccountApi>;
+
+/** Calls that don't belong to a ledger (feedback, admin, the user's own settings). */
+export function createAccountApi(getIdToken: () => string | null) {
+  const request = makeRequest(getIdToken);
+  return {
+    me: () => request<{ isAdmin: boolean }>('GET', '/api/me'),
+    setMyPaymentInfo: async (info: string) =>
+      (await request<{ info: string | null }>('PUT', '/api/me/payment-info', { info })).info,
+    sendFeedback: (body: {
+      category: FeedbackCategory;
+      message: string;
+      ledgerId?: string;
+      context?: Record<string, string | number | boolean>;
+    }) => request<Feedback>('POST', '/api/feedback', body),
+    myFeedback: async () => (await request<{ feedback: Feedback[] }>('GET', '/api/feedback/mine')).feedback,
+    adminFeedback: async (status?: FeedbackStatus) =>
+      (await request<{ feedback: AdminFeedback[] }>('GET', `/api/admin/feedback${status ? `?status=${status}` : ''}`))
+        .feedback,
+    updateFeedback: (id: string, patch: { status?: FeedbackStatus; adminNote?: string | null }) =>
+      request<AdminFeedback>('PATCH', `/api/admin/feedback/${encodeURIComponent(id)}`, patch),
+  };
+}
+
+export type Api = ReturnType<typeof createApi>;
+
+export function createApi(getIdToken: () => string | null, ledgerId: string) {
+  const base = `/api/ledgers/${encodeURIComponent(ledgerId)}`;
+  const request = makeRequest(getIdToken);
 
   return {
+    ...createAccountApi(getIdToken),
     join: () => request<LedgerView>('POST', `${base}/join`),
     history: async () => (await request<{ ledgers: GroupLedger[] }>('GET', `${base}/history`)).ledgers,
     closeLedger: () => request<LedgerView>('POST', `${base}/close`),
     startNextLedger: (name: string, memberIds: string[]) =>
       request<LedgerView>('POST', `${base}/next`, { name, memberIds }),
-    setMyPaymentInfo: async (info: string) =>
-      (await request<{ info: string | null }>('PUT', '/api/me/payment-info', { info })).info,
     patchLedger: (patch: { name?: string; baseCurrency?: string }) => request<LedgerView>('PATCH', base, patch),
     expenses: async () => (await request<{ expenses: Expense[] }>('GET', `${base}/expenses`)).expenses,
     createExpense: (body: ExpenseBody) => request<Expense>('POST', `${base}/expenses`, body),
@@ -144,7 +192,9 @@ export function createApi(getIdToken: () => string | null, ledgerId: string) {
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 401) return '登入已過期，請關閉後重新開啟帳本';
+    if (err.status === 403 && /admin/i.test(err.message)) return '只有管理員可以使用此功能';
     if (err.status === 403) return '你不是這個帳本的成員';
+    if (err.status === 429) return '今天送出的回饋已達上限，請明天再試';
     if (err.status === 404) return '找不到資料，可能已被刪除';
     if (err.status === 409 && /unsettled/i.test(err.message)) return '還有款項未結清，請先全部標記已付再結束帳本';
     if (err.status === 409 && /closed/i.test(err.message)) return '這本帳本已結束，無法修改';

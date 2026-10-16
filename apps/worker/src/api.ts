@@ -7,6 +7,9 @@ import { verifyIdToken } from './line/idToken';
 import {
   expenseSchema,
   expenseUpdateSchema,
+  feedbackPatchSchema,
+  feedbackSchema,
+  feedbackStatusSchema,
   fxQuerySchema,
   ledgerPatchSchema,
   nextLedgerSchema,
@@ -28,6 +31,16 @@ import {
   type LedgerRow,
   type MemberRow,
 } from './services/ledgers';
+import { LineClient } from './line/client';
+import { adminFeedbackUrl } from './line/messages';
+import {
+  createFeedback,
+  feedbackNotice,
+  listAllFeedback,
+  listMyFeedback,
+  toPublicFeedback,
+  updateFeedback,
+} from './services/feedback';
 import { getPaymentInfo, setPaymentInfo } from './services/payments';
 import { createSettlement, deleteSettlement, getSummary, listSettlements } from './services/settlements';
 
@@ -227,6 +240,54 @@ api.delete('/ledgers/:ledgerId/settlements/:settlementId', async (c) => {
   const { ledger, me } = requireOpen(await requireMember(c));
   await deleteSettlement(c.env.DB, ledger, me, c.req.param('settlementId'));
   return c.body(null, 204);
+});
+
+function adminIds(c: Ctx): string[] {
+  return (c.env.ADMIN_LINE_USER_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function requireAdmin(c: Ctx): void {
+  if (!adminIds(c).includes(c.get('user').lineUserId)) throw new HttpError(403, 'Admins only');
+}
+
+api.get('/me', (c) => c.json({ isAdmin: adminIds(c).includes(c.get('user').lineUserId) }));
+
+api.post('/feedback', async (c) => {
+  const body = await parseJson(c, feedbackSchema);
+  const feedback = await createFeedback(c.env.DB, c.get('user'), body);
+
+  const admins = adminIds(c);
+  if (c.env.FEEDBACK_PUSH === 'on' && admins.length > 0) {
+    // Notify in the background; a failed push (e.g. quota) must not lose the feedback.
+    const line = new LineClient(c.env.LINE_CHANNEL_ACCESS_TOKEN);
+    const text = feedbackNotice(feedback, adminFeedbackUrl(c.env.LIFF_ID));
+    c.executionCtx.waitUntil(
+      Promise.all(admins.map((to) => line.push(to, [{ type: 'text', text }]))).catch((err) =>
+        console.error('Failed to push feedback notice', err),
+      ),
+    );
+  }
+
+  return c.json(toPublicFeedback(feedback), 201);
+});
+
+api.get('/feedback/mine', async (c) => c.json({ feedback: await listMyFeedback(c.env.DB, c.get('user').lineUserId) }));
+
+api.get('/admin/feedback', async (c) => {
+  requireAdmin(c);
+  const raw = c.req.query('status');
+  const status = raw === undefined ? undefined : feedbackStatusSchema.safeParse(raw);
+  if (status && !status.success) throw new HttpError(400, 'Unknown status');
+  return c.json({ feedback: await listAllFeedback(c.env.DB, status?.data) });
+});
+
+api.patch('/admin/feedback/:id', async (c) => {
+  requireAdmin(c);
+  const patch = await parseJson(c, feedbackPatchSchema);
+  return c.json(await updateFeedback(c.env.DB, c.req.param('id'), patch));
 });
 
 /** The caller's own payment details; nobody can read or change another user's here. */

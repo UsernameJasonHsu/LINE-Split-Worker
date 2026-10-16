@@ -125,6 +125,17 @@ export function HomeView(props: ViewProps) {
           </section>
         ))
       )}
+
+      <footer className="page-links">
+        <button type="button" className="link-button" onClick={() => navigate({ name: 'feedback' })}>
+          💬 意見回饋
+        </button>
+        {data.isAdmin && (
+          <button type="button" className="link-button" onClick={() => navigate({ name: 'admin' })}>
+            🛠 回饋管理
+          </button>
+        )}
+      </footer>
     </main>
   );
 }

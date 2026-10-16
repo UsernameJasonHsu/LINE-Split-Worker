@@ -58,4 +58,26 @@ export const paymentInfoSchema = z.object({
   info: z.string().trim().max(200),
 });
 
+export const FEEDBACK_CATEGORIES = ['bug', 'idea', 'other'] as const;
+export const FEEDBACK_STATUSES = ['new', 'in_progress', 'done', 'wont_fix'] as const;
+
+export const feedbackSchema = z.object({
+  category: z.enum(FEEDBACK_CATEGORIES),
+  message: z.string().trim().min(1).max(1000),
+  ledgerId: z.string().max(64).optional(),
+  /** Diagnostic hints from the client (page, user agent…), capped in size. */
+  context: z
+    .record(z.union([z.string(), z.number(), z.boolean()]))
+    .refine((c) => JSON.stringify(c).length <= 2000, 'context too large')
+    .optional(),
+});
+export type FeedbackBody = z.infer<typeof feedbackSchema>;
+
+export const feedbackStatusSchema = z.enum(FEEDBACK_STATUSES);
+
+export const feedbackPatchSchema = z.object({
+  status: feedbackStatusSchema.optional(),
+  adminNote: z.string().trim().max(1000).nullable().optional(),
+});
+
 export const fxQuerySchema = z.object({ from: currency, to: currency });

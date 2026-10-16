@@ -6,11 +6,21 @@ export const HELP_TEXT = [
   '分帳小幫手指令：',
   '・帳本：取得記帳連結',
   '・結算：查看誰該付誰',
+  '・回饋：回報問題或提出建議',
   '・說明：顯示這段說明',
 ].join('\n');
 
 export function liffUrl(liffId: string, ledgerId: string): string {
   return `https://liff.line.me/${liffId}?l=${encodeURIComponent(ledgerId)}`;
+}
+
+export function feedbackUrl(liffId: string, ledgerId?: string): string {
+  const ledger = ledgerId ? `&l=${encodeURIComponent(ledgerId)}` : '';
+  return `https://liff.line.me/${liffId}?view=feedback${ledger}`;
+}
+
+export function adminFeedbackUrl(liffId: string): string {
+  return `https://liff.line.me/${liffId}?view=admin`;
 }
 
 const openLedgerFooter = (url: string) => ({

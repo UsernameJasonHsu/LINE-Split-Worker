@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { AppEnv, Env } from './env';
 import { LineClient } from './line/client';
 import {
+  feedbackUrl,
   HELP_TEXT,
   ledgerLinkMessage,
   liffUrl,
@@ -144,6 +145,12 @@ async function handleCommand(text: string, replyToken: string, env: Env, line: L
       ]);
       return;
     }
+    case '回饋':
+    case '意見回饋':
+      await line.reply(replyToken, [
+        { type: 'text', text: `有問題或建議嗎？歡迎在這裡告訴我們 🙏\n${feedbackUrl(env.LIFF_ID, ledger.id)}` },
+      ]);
+      return;
     case '說明':
     case 'help':
       await line.reply(replyToken, [{ type: 'text', text: HELP_TEXT }]);

@@ -11,9 +11,11 @@ export const TEST_ENV = {
   LINE_CHANNEL_ACCESS_TOKEN: 'test-access-token',
   LINE_LOGIN_CHANNEL_ID: '1234567890',
   LIFF_ID: '2000000000-TestLiff',
+  ADMIN_LINE_USER_IDS: 'Uadmin, Uother-admin',
+  FEEDBACK_PUSH: 'on',
 };
 
-const TABLES = ['payment_profiles', 'audit_logs', 'fx_rates', 'settlements', 'expense_shares', 'expense_payers', 'expenses', 'members', 'ledgers'];
+const TABLES = ['feedback', 'payment_profiles', 'audit_logs', 'fx_rates', 'settlements', 'expense_shares', 'expense_payers', 'expenses', 'members', 'ledgers'];
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'migrations');
 export const MIGRATIONS = readdirSync(MIGRATIONS_DIR).sort();
@@ -76,6 +78,7 @@ export interface FakeUser {
 /** Replaces outbound HTTP with an in-memory fake of the LINE and FX APIs. */
 export function installFakeExternal() {
   const replies: { replyToken: string; messages: any[] }[] = [];
+  const pushes: { to: string; messages: any[] }[] = [];
   const idTokens = new Map<string, FakeUser>();
   const fxRates: Record<string, Record<string, number>> = {};
   const calls = { fx: 0 };
@@ -90,6 +93,10 @@ export function installFakeExternal() {
         return Response.json({ error: 'invalid_request' }, { status: 400 });
       }
       return Response.json({ ...user, exp: Math.floor(Date.now() / 1000) + 3600 });
+    }
+    if (url.href === 'https://api.line.me/v2/bot/message/push') {
+      pushes.push(JSON.parse(String(init?.body)));
+      return Response.json({});
     }
     if (url.href === 'https://api.line.me/v2/bot/message/reply') {
       replies.push(JSON.parse(String(init?.body)));
@@ -108,7 +115,7 @@ export function installFakeExternal() {
     throw new Error(`Unexpected fetch: ${url.href}`);
   };
 
-  return { replies, idTokens, fxRates, calls };
+  return { replies, pushes, idTokens, fxRates, calls };
 }
 
 export function apiRequest(method: string, path: string, token?: string, body?: unknown): Request {

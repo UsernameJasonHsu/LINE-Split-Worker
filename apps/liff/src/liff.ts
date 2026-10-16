@@ -12,18 +12,20 @@ export async function initLiff(): Promise<void> {
 }
 
 /**
- * Reads `?l=` from the URL. On first launch via liff.line.me the query is
+ * Reads a query parameter. On first launch via liff.line.me the query is
  * still wrapped in `liff.state` until the SDK's secondary redirect, so look there too.
  */
-export function ledgerIdFromUrl(search = window.location.search): string | null {
+export function urlParam(name: string, search = window.location.search): string | null {
   const params = new URLSearchParams(search);
-  const direct = params.get('l');
+  const direct = params.get(name);
   if (direct) return direct;
   const state = params.get('liff.state');
   if (!state) return null;
   const query = state.includes('?') ? state.slice(state.indexOf('?')) : state;
-  return new URLSearchParams(query).get('l');
+  return new URLSearchParams(query).get(name);
 }
+
+export const ledgerIdFromUrl = (search?: string) => urlParam('l', search);
 
 export function ledgerLink(ledgerId: string): string {
   return `https://liff.line.me/${import.meta.env.VITE_LIFF_ID}?l=${encodeURIComponent(ledgerId)}`;

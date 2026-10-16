@@ -23,6 +23,10 @@
   // LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN go in .dev.vars and `wrangler secret put`.
   "vars": {
     "LINE_LOGIN_CHANNEL_ID": "2012045029",
-    "LIFF_ID": "2012045029-M7BBPLHN"
+    "LIFF_ID": "2012045029-M7BBPLHN",
+    // Feedback reviewers (LINE user ids under this provider), comma-separated.
+    "ADMIN_LINE_USER_IDS": "U96cdee0ab0771132936497568dc666e8",
+    // "on" pushes each new feedback to the admins; "off" to save push quota.
+    "FEEDBACK_PUSH": "on"
   }
 }

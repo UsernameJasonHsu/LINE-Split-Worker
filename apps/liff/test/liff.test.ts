@@ -18,3 +18,12 @@ describe('ledgerIdFromUrl', () => {
     expect(ledgerIdFromUrl(`?liff.state=${encodeURIComponent('/somewhere')}`)).toBeNull();
   });
 });
+
+describe('urlParam', () => {
+  it('reads other parameters, including from liff.state', async () => {
+    const { urlParam } = await import('../src/liff');
+    expect(urlParam('view', '?view=feedback&l=x')).toBe('feedback');
+    expect(urlParam('view', `?liff.state=${encodeURIComponent('?view=admin')}`)).toBe('admin');
+    expect(urlParam('view', '?l=x')).toBeNull();
+  });
+});

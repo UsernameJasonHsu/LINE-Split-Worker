@@ -75,6 +75,13 @@ audit_logs      (id, ledger_id, actor_member_id, action, entity, before_json, af
 | P2 | 收據 OCR、匯出 CSV、虛擬成員 |
 | 保留 | 群組打字記帳（如 `午餐 450 我付 平分`） |
 
+## 意見回饋
+
+- 使用者從 LIFF 首頁「意見回饋」或群組指令「回饋」送出（問題回報／功能建議／其他），每人每 24 小時最多 10 則、每則 ≤ 1000 字。
+- 送出者可在同頁看到自己的回饋處理狀態與開發者回覆。
+- 管理員由 `ADMIN_LINE_USER_IDS`（wrangler vars）指定；`/api/admin/*` 一律檢查。管理頁：LIFF `?view=admin`。
+- `FEEDBACK_PUSH=on` 時，新回饋以 push 通知管理員（耗用官方帳號每月推播額度；推播失敗不影響回饋儲存）。
+
 ## 機密設定
 
 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN` 放在本機 `.dev.vars`（不進版控）與 `wrangler secret`。`LINE_LOGIN_CHANNEL_ID`、`LIFF_ID` 非機密。
