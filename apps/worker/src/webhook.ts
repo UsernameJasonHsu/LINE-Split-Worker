@@ -42,7 +42,12 @@ export async function webhookHandler(c: Context<AppEnv>) {
   const valid = await verifySignature(body, c.req.header('x-line-signature'), c.env.LINE_CHANNEL_SECRET);
   if (!valid) return c.text('Invalid signature', 401);
 
-  const { events = [] } = JSON.parse(body) as { events?: WebhookEvent[] };
+  let events: WebhookEvent[];
+  try {
+    events = (JSON.parse(body) as { events?: WebhookEvent[] }).events ?? [];
+  } catch {
+    return c.text('Invalid body', 400);
+  }
   // Acknowledge immediately; LINE retries/time-outs are keyed on response latency.
   c.executionCtx.waitUntil(handleEvents(events, c.env));
   return c.text('OK');
@@ -110,11 +115,18 @@ async function handleEvent(event: WebhookEvent, env: Env, line: LineClient): Pro
   }
 }
 
-/** Adds group members to the ledger the first time they speak. */
+/**
+ * Adds group members to the ledger the first time they speak. Best effort: a
+ * failed profile lookup must not stop the bot from answering the command.
+ */
 async function registerSpeaker(env: Env, line: LineClient, ledger: LedgerRow, groupId: string, userId: string) {
-  if (await findMemberByLineUser(env.DB, ledger.id, userId)) return;
-  const profile = await line.getGroupMemberProfile(groupId, userId);
-  await upsertLineMember(env.DB, ledger.id, userId, profile);
+  try {
+    if (await findMemberByLineUser(env.DB, ledger.id, userId)) return;
+    const profile = await line.getGroupMemberProfile(groupId, userId);
+    await upsertLineMember(env.DB, ledger.id, userId, profile);
+  } catch (err) {
+    console.error('Failed to register speaker', err);
+  }
 }
 
 async function handleCommand(text: string, replyToken: string, env: Env, line: LineClient, ledger: LedgerRow) {

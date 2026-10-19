@@ -248,14 +248,18 @@ export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 401) return '登入已過期，請關閉後重新開啟帳本';
     if (err.status === 403 && /admin/i.test(err.message)) return '只有管理員可以使用此功能';
+    if (err.status === 403 && /LINE group/i.test(err.message)) return '只有群組成員可以加入這本帳本，請從群組裡的連結開啟';
     if (err.status === 403) return '你不是這個帳本的成員';
     if (err.status === 429) return '今天送出的回饋已達上限，請明天再試';
     if (err.status === 404) return '找不到資料，可能已被刪除';
     if (err.status === 409 && /unsettled/i.test(err.message)) return '還有款項未結清，請先全部標記已付再結束帳本';
     if (err.status === 409 && /closed/i.test(err.message)) return '這本帳本已結束，無法修改';
     if (err.status === 409 && /open ledger/i.test(err.message)) return '群組已有進行中的帳本，請重新整理';
+    if (err.status === 409 && /outstanding balance/i.test(err.message)) return '這筆款項已經有人標記已付，請重新整理';
+    if (err.status === 409 && /base currency/i.test(err.message)) return '已有記錄的帳本無法變更主幣別';
     if (err.status === 409) return '資料已被其他人修改，請重新整理後再試';
     if (err.status === 502) return '暫時無法取得匯率，請手動輸入匯率';
+    if (err.status === 503) return '暫時無法確認群組成員，請稍後再試';
     return err.message;
   }
   return '連線失敗，請稍後再試';

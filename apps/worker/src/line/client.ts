@@ -7,6 +7,15 @@ export interface LineProfile {
   pictureUrl?: string;
 }
 
+export class LineApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 export class LineClient {
   constructor(private readonly accessToken: string) {}
 
@@ -20,7 +29,7 @@ export class LineClient {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!res.ok) {
-      throw new Error(`LINE API ${method} ${path} failed: ${res.status} ${await res.text()}`);
+      throw new LineApiError(`LINE API ${method} ${path} failed: ${res.status} ${await res.text()}`, res.status);
     }
     return res;
   }
@@ -46,6 +55,17 @@ export class LineClient {
   async getGroupMemberProfile(groupId: string, userId: string): Promise<LineProfile> {
     const path = `/v2/bot/group/${encodeURIComponent(groupId)}/member/${encodeURIComponent(userId)}`;
     return (await this.request('GET', path)).json<LineProfile>();
+  }
+
+  /** Whether the user is currently in the group (LINE answers 404 when not). */
+  async isGroupMember(groupId: string, userId: string): Promise<boolean> {
+    try {
+      await this.getGroupMemberProfile(groupId, userId);
+      return true;
+    } catch (err) {
+      if (err instanceof LineApiError && err.status === 404) return false;
+      throw err;
+    }
   }
 
   async getGroupName(groupId: string): Promise<string> {

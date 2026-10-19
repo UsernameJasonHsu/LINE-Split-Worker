@@ -589,3 +589,78 @@ describe('expenses and settlement flow', () => {
     expect((await api('PATCH', `/ledgers/${ledgerId}`, 'token-alice', { baseCurrency: 'TWD' })).status).toBe(409);
   });
 });
+
+describe('hardening', () => {
+  it('only lets people in the LINE group join a group ledger', async () => {
+    const ledgerId = await joinGroup();
+    fake.notInGroup.add('Ueve');
+    expect((await api('POST', `/ledgers/${ledgerId}/join`, 'token-eve')).status).toBe(403);
+    expect((await api('GET', `/ledgers/${ledgerId}/expenses`, 'token-eve')).status).toBe(403);
+
+    expect((await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice')).status).toBe(200);
+    // Existing members re-open without a group check (e.g. after leaving the group).
+    fake.notInGroup.add('Ualice');
+    expect((await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice')).status).toBe(200);
+  });
+
+  it('refuses a join it cannot verify instead of letting it through', async () => {
+    const ledgerId = await joinGroup();
+    fake.groupProfile.fail = true;
+    expect((await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice')).status).toBe(503);
+  });
+
+  it('rejects marking the same transfer paid twice', async () => {
+    const ledgerId = await joinGroup();
+    const alice = (await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice')).body.meMemberId as string;
+    const bob = (await api('POST', `/ledgers/${ledgerId}/join`, 'token-bob')).body.meMemberId as string;
+    await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', {
+      title: '晚餐',
+      currency: 'TWD',
+      amount: '600',
+      payers: [{ memberId: alice, amount: '600' }],
+      split: { type: 'equal', memberIds: [alice, bob] },
+    });
+    const transfer = { fromMemberId: bob, toMemberId: alice, amount: '300' };
+    expect((await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', transfer)).status).toBe(201);
+    const again = await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-alice', transfer);
+    expect(again.status).toBe(409);
+    expect((await api('GET', `/ledgers/${ledgerId}/settlements`, 'token-bob')).body.settlements).toHaveLength(1);
+
+    // Paying more than owed, or in the wrong direction, is refused as well.
+    await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', {
+      title: '咖啡',
+      currency: 'TWD',
+      amount: '200',
+      payers: [{ memberId: alice, amount: '200' }],
+      split: { type: 'equal', memberIds: [alice, bob] },
+    });
+    expect((await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', { ...transfer, amount: '101' })).status).toBe(409);
+    expect(
+      (await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', { fromMemberId: alice, toMemberId: bob, amount: '1' })).status,
+    ).toBe(409);
+    expect((await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', { ...transfer, amount: '100' })).status).toBe(201);
+  });
+
+  it('still answers a command when the speaker profile lookup fails', async () => {
+    await joinGroup();
+    fake.groupProfile.fail = true;
+    await callApp(
+      env,
+      signedWebhook([
+        { type: 'message', replyToken: 'rt-cmd', source: groupSource('Unew'), message: { type: 'text', text: '結算' } },
+      ]),
+    );
+    expect(fake.replies.some((r) => r.replyToken === 'rt-cmd')).toBe(true);
+  });
+
+  it('answers 400 to a signed but malformed webhook body', async () => {
+    const { createHmac } = await import('node:crypto');
+    const body = '{not json';
+    const signature = createHmac('sha256', TEST_ENV.LINE_CHANNEL_SECRET).update(body).digest('base64');
+    const res = await callApp(
+      env,
+      new Request('https://worker.test/webhook', { method: 'POST', headers: { 'x-line-signature': signature }, body }),
+    );
+    expect(res.status).toBe(400);
+  });
+});

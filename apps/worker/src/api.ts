@@ -126,15 +126,27 @@ api.use('*', async (c, next) => {
 });
 
 /**
- * Idempotent: anyone holding an open ledger's link can join; closed ledgers
- * only admit their existing members. Refreshes name/avatar.
+ * Idempotent; refreshes name/avatar. New members must be in the ledger's LINE
+ * group, so a forwarded link doesn't expose the ledger (and everyone's payment
+ * info) to outsiders. Closed ledgers only admit their existing members.
  */
 api.post('/ledgers/:ledgerId/join', async (c) => {
   const ledger = await findLedger(c.env.DB, c.req.param('ledgerId'));
   if (!ledger) throw new HttpError(404, 'Ledger not found');
   const user = c.get('user');
-  if (ledger.closed_at !== null && !(await findMemberByLineUser(c.env.DB, ledger.id, user.lineUserId))) {
-    throw new HttpError(403, 'Not a member of this closed ledger');
+  if (!(await findMemberByLineUser(c.env.DB, ledger.id, user.lineUserId))) {
+    if (ledger.closed_at !== null) throw new HttpError(403, 'Not a member of this closed ledger');
+    if (ledger.line_group_id) {
+      const line = new LineClient(c.env.LINE_CHANNEL_ACCESS_TOKEN);
+      let inGroup: boolean;
+      try {
+        inGroup = await line.isGroupMember(ledger.line_group_id, user.lineUserId);
+      } catch (err) {
+        console.error('Failed to check group membership', err);
+        throw new HttpError(503, 'Cannot verify group membership');
+      }
+      if (!inGroup) throw new HttpError(403, 'Not in this LINE group');
+    }
   }
   const me = await upsertLineMember(c.env.DB, ledger.id, user.lineUserId, user);
   const members = await listMembers(c.env.DB, ledger.id);

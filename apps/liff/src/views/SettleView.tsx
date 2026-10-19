@@ -1,6 +1,6 @@
 import { formatMinor, formatMoney, SUPPORTED_CURRENCIES, type Transfer } from '@line-split/core';
 import { useState } from 'react';
-import { errorMessage } from '../api';
+import { ApiError, errorMessage } from '../api';
 import { navigate, type ViewProps } from '../App';
 import { Avatar, copyText, formatDate, memberLookup, Money, TopBar } from '../components';
 import { ledgerLink, shareText, trySendToChat } from '../liff';
@@ -23,6 +23,8 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
       if (done) notify(done);
     } catch (err) {
       notify(err instanceof Error && !('status' in err) ? err.message : errorMessage(err));
+      // Someone else changed the ledger meanwhile; show the current state.
+      if (err instanceof ApiError && err.status === 409) void reload();
     } finally {
       setBusy(false);
     }

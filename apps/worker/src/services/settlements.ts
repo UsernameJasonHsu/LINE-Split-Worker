@@ -61,6 +61,15 @@ export async function createSettlement(
   }
   if (amountMinor <= 0) throw new HttpError(400, 'Amount must be positive');
 
+  // A payment can't exceed what the payer owes or the payee is owed. This
+  // rejects the same suggested transfer being marked paid twice (e.g. by both
+  // people, or from a stale screen), which would otherwise flip the debt.
+  const { balances } = await getSummary(db, ledger, members);
+  const balanceOf = (id: string) => balances.find((b) => b.memberId === id)?.balanceMinor ?? 0;
+  if (amountMinor > -balanceOf(body.fromMemberId) || amountMinor > balanceOf(body.toMemberId)) {
+    throw new HttpError(409, 'Settlement exceeds the outstanding balance');
+  }
+
   const now = Date.now();
   const row: SettlementRow = {
     id: crypto.randomUUID(),

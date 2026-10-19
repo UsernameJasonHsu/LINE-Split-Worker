@@ -83,6 +83,9 @@ export function installFakeExternal() {
   const fxRates: Record<string, Record<string, number>> = {};
   const calls = { fx: 0 };
   const lineQuota: { value: number | null; used: number; fail?: boolean } = { value: 200, used: 2 };
+  /** LINE users the group-member API reports as not in the group (404). */
+  const notInGroup = new Set<string>();
+  const groupProfile: { fail?: boolean } = {};
 
   http.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input.toString());
@@ -114,7 +117,11 @@ export function installFakeExternal() {
     let m = url.pathname.match(/^\/v2\/bot\/group\/([^/]+)\/summary$/);
     if (m) return Response.json({ groupId: m[1], groupName: '日本旅行' });
     m = url.pathname.match(/^\/v2\/bot\/group\/([^/]+)\/member\/([^/]+)$/);
-    if (m) return Response.json({ userId: m[2], displayName: `Group ${m[2]}` });
+    if (m) {
+      if (groupProfile.fail) return new Response('{"message":"error"}', { status: 500 });
+      if (notInGroup.has(m[2]!)) return new Response('{"message":"Not found"}', { status: 404 });
+      return Response.json({ userId: m[2], displayName: `Group ${m[2]}` });
+    }
 
     if (url.hostname === 'open.er-api.com') {
       calls.fx++;
@@ -124,7 +131,7 @@ export function installFakeExternal() {
     throw new Error(`Unexpected fetch: ${url.href}`);
   };
 
-  return { replies, pushes, idTokens, fxRates, calls, lineQuota };
+  return { replies, pushes, idTokens, fxRates, calls, lineQuota, notInGroup, groupProfile };
 }
 
 export function apiRequest(method: string, path: string, token?: string, body?: unknown): Request {
