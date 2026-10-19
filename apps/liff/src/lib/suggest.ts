@@ -69,30 +69,3 @@ export function frequentTitles(expenses: PastExpense[], limit = 6): string[] {
     .slice(0, limit)
     .map((s) => s.title);
 }
-
-/**
- * Groups of people who often split together (besides everyone), most used
- * first, so a recurring "the three of us" is one tap.
- */
-export function splitPresets(
-  expenses: { createdAt: number; shares: { memberId: string; shareMinor: number }[] }[],
-  memberIds: string[],
-  limit = 3,
-): string[][] {
-  const current = new Set(memberIds);
-  const stats = new Map<string, { ids: string[]; count: number; last: number }>();
-  for (const e of expenses) {
-    const ids = e.shares.filter((s) => s.shareMinor > 0 && current.has(s.memberId)).map((s) => s.memberId).sort();
-    if (ids.length === 0 || ids.length === current.size) continue;
-    const key = ids.join(',');
-    const s = stats.get(key);
-    if (s) {
-      s.count++;
-      s.last = Math.max(s.last, e.createdAt);
-    } else stats.set(key, { ids, count: 1, last: e.createdAt });
-  }
-  return [...stats.values()]
-    .sort((a, b) => b.count - a.count || b.last - a.last)
-    .slice(0, limit)
-    .map((s) => s.ids);
-}

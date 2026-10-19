@@ -6,8 +6,16 @@ import { navigate, type ViewProps } from '../App';
 import type { Member } from '../api';
 import { Avatar, memberLookup, Money, TopBar } from '../components';
 import { CATEGORY_META, EXPENSE_CATEGORIES } from '../lib/categories';
-import { emptyForm, fixedRestRemainder, formFromExpense, toPayload, validate, type ExpenseForm } from '../lib/form';
-import { expenseNotice, frequentTitles, guessCategory, pastTitles, splitPresets } from '../lib/suggest';
+import {
+  emptyForm,
+  fixedRestRemainder,
+  formFromExpense,
+  toDateInput,
+  toPayload,
+  validate,
+  type ExpenseForm,
+} from '../lib/form';
+import { expenseNotice, frequentTitles, guessCategory, pastTitles } from '../lib/suggest';
 import { canSendToChat, ledgerLink, trySendToChat } from '../liff';
 
 const POST_TO_CHAT_KEY = 'postNewExpenseToChat';
@@ -50,20 +58,15 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
   const setTitle = (title: string) =>
     set(categoryPicked ? { title } : { title, category: guessCategory(title, data.expenses) });
 
-  // One-tap shortcuts: frequent titles and groups that often split together.
-  // Rarely needed fields stay under 更多選項 (open when editing).
+  // Frequent titles are one tap; category, date and note are folded away,
+  // with their current values shown on the fold.
   const quickTitles = useMemo(() => (existing ? [] : frequentTitles(data.expenses)), [existing, data.expenses]);
-  const presets = useMemo(() => {
-    const nameOf = (id: string) => (id === view.meMemberId ? '我' : (members.find((m) => m.id === id)?.displayName ?? '?'));
-    const label = (ids: string[]) =>
-      ids.length > 3 ? `${ids.slice(0, 2).map(nameOf).join('+')} 等 ${ids.length} 人` : ids.map(nameOf).join('+');
-    const all = members.map((m) => m.id);
-    return [
-      { key: 'all', label: '全員', ids: all },
-      ...splitPresets(data.expenses, all).map((ids) => ({ key: ids.join(','), label: label(ids), ids })),
-    ];
-  }, [data.expenses, members, view.meMemberId]);
-  const [moreOpen, setMoreOpen] = useState(!!existing);
+  const [moreOpen, setMoreOpen] = useState(readOnly || !!existing?.note);
+  const moreSummary = [
+    form.category ? `${CATEGORY_META[form.category].emoji} ${CATEGORY_META[form.category].label}` : '未分類',
+    form.date === toDateInput(Date.now()) ? '今天' : form.date.replace(/^\d{4}-0?(\d+)-0?(\d+)$/, '$1/$2'),
+    ...(form.note.trim() ? ['有備註'] : []),
+  ].join('・');
 
   const chatAvailable = !existing && canSendToChat();
   const [postToChat, setPostToChat] = useState(loadPostToChat);
@@ -120,7 +123,6 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
 
   async function save() {
     setSubmitted(true);
-    if (!validation.ok && validation.field === 'split' && form.splitType !== 'equal') setMoreOpen(true);
     if (titleError || !validation.ok) return;
     setBusy(true);
     try {
@@ -263,11 +265,6 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
               ))}
             </div>
           )}
-          {form.category && !moreOpen && (
-            <button type="button" className="link-button small category-hint" onClick={() => setMoreOpen(true)}>
-              分類：{CATEGORY_META[form.category].emoji} {CATEGORY_META[form.category].label}（修改）
-            </button>
-          )}
 
           <div className="field">
             <span className="field-head">
@@ -316,19 +313,32 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
           </div>
 
           <div className="field">
-            <span>誰分攤</span>
-            <div className="chips wrap" aria-label="常用分攤組合">
-              {presets.map((p) => (
+            <span className="field-head">
+              <span>分攤</span>
+              {form.splitType === 'equal' && !readOnly && (
                 <button
-                  key={p.key}
                   type="button"
-                  className={`chip ${form.splitType === 'equal' && sameIds(form.equalIds, p.ids) ? 'active' : ''}`}
-                  onClick={() => set({ splitType: 'equal', equalIds: p.ids })}
+                  className="link-button"
+                  onClick={() => set({ equalIds: allSelected ? [] : members.map((m) => m.id) })}
                 >
-                  {p.label}
+                  {allSelected ? '全部取消' : '全選'}
                 </button>
-              ))}
-            </div>
+              )}
+            </span>
+          <div className="segmented" role="tablist">
+            {SPLIT_TABS.map((t) => (
+              <button
+                key={t.type}
+                type="button"
+                role="tab"
+                aria-selected={form.splitType === t.type}
+                className={form.splitType === t.type ? 'active' : ''}
+                onClick={() => set({ splitType: t.type })}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
             {form.splitType === 'equal' ? (
               <div className="person-chips" aria-label="分攤的人">
                 {members.map((m) => (
@@ -344,83 +354,7 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                 ))}
               </div>
             ) : (
-              <button type="button" className="link-button small" onClick={() => setMoreOpen(true)}>
-                目前用「{SPLIT_TABS.find((t) => t.type === form.splitType)!.label}」分攤，在更多選項調整
-              </button>
-            )}
-            {!moreOpen && !validation.ok && validation.field === 'split' && (showErrors || form.amount !== '') && (
-              <p className="error">{validation.error}</p>
-            )}
-          </div>
-        </section>
-
-        <details className="more-options" open={moreOpen} onToggle={(e) => setMoreOpen(e.currentTarget.open)}>
-          <summary>更多選項（分類、分攤方式、日期、備註）</summary>
-          <section className="card form">
-          <div className="field">
-            <span>分類</span>
-            <div className="chips wrap" role="radiogroup" aria-label="分類">
-              {EXPENSE_CATEGORIES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  role="radio"
-                  aria-checked={form.category === c}
-                  className={`chip ${form.category === c ? 'active' : ''}`}
-                  onClick={() => {
-                    setCategoryPicked(true);
-                    set({ category: form.category === c ? null : c });
-                  }}
-                >
-                  {CATEGORY_META[c].emoji} {CATEGORY_META[c].label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <label className="field">
-            <span>日期</span>
-            <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
-          </label>
-
-          <label className="field">
-            <span>備註（選填）</span>
-            <textarea
-              value={form.note}
-              onChange={(e) => set({ note: e.target.value })}
-              placeholder="例如：含一成服務費、小孩半價"
-              maxLength={500}
-              rows={2}
-            />
-          </label>
-          </section>
-
-        <section className="card form">
-          <div className="segmented" role="tablist">
-            {SPLIT_TABS.map((t) => (
-              <button
-                key={t.type}
-                type="button"
-                role="tab"
-                aria-selected={form.splitType === t.type}
-                className={form.splitType === t.type ? 'active' : ''}
-                onClick={() => set({ splitType: t.type })}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {form.splitType === 'equal' && (
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => set({ equalIds: allSelected ? [] : members.map((m) => m.id) })}
-            >
-              {allSelected ? '全部取消' : '全選'}
-            </button>
-          )}
-
+              <>
           {form.splitType === 'fixed_rest' && (
             <p className="split-hint small">
               先填有指定金額的人，剩下的由勾選「平分」的人均分。
@@ -433,24 +367,15 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
               )}
             </p>
           )}
-
           <ul className="list">
             {members.map((m) => {
               const share = shareOf.get(m.id);
               return (
                 <li key={m.id} className="split-row">
-                  {form.splitType === 'equal' ? (
-                    <label className="split-label">
-                      <input type="checkbox" checked={form.equalIds.includes(m.id)} onChange={() => toggle(m.id)} />
-                      <Avatar member={m} size={28} />
-                      <span>{m.displayName}</span>
-                    </label>
-                  ) : (
-                    <span className="split-label">
-                      <Avatar member={m} size={28} />
-                      <span>{m.displayName}</span>
-                    </span>
-                  )}
+                  <span className="split-label">
+                    <Avatar member={m} size={28} />
+                    <span>{m.displayName}</span>
+                  </span>
 
                   {form.splitType === 'weights' && (
                     <span className="stepper">
@@ -497,10 +422,57 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
               );
             })}
           </ul>
+              </>
+            )}
           {!validation.ok && validation.field !== 'payers' && (showErrors || form.amount !== '') && (
             <p className="error">{validation.error}</p>
           )}
+          </div>
         </section>
+
+        <details className="more-options" open={moreOpen} onToggle={(e) => setMoreOpen(e.currentTarget.open)}>
+          <summary>
+            分類、日期、備註
+            <span className="more-summary">{moreSummary}</span>
+          </summary>
+          <section className="card form">
+          <div className="field">
+            <span>分類</span>
+            <div className="chips wrap" role="radiogroup" aria-label="分類">
+              {EXPENSE_CATEGORIES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.category === c}
+                  className={`chip ${form.category === c ? 'active' : ''}`}
+                  onClick={() => {
+                    setCategoryPicked(true);
+                    set({ category: form.category === c ? null : c });
+                  }}
+                >
+                  {CATEGORY_META[c].emoji} {CATEGORY_META[c].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="field">
+            <span>日期</span>
+            <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} />
+          </label>
+
+          <label className="field">
+            <span>備註（選填）</span>
+            <textarea
+              value={form.note}
+              onChange={(e) => set({ note: e.target.value })}
+              placeholder="例如：含一成服務費、小孩半價"
+              maxLength={500}
+              rows={2}
+            />
+          </label>
+          </section>
         </details>
       </fieldset>
 
@@ -526,8 +498,6 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
     </main>
   );
 }
-
-const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
 
 /** A tappable member avatar with name (payer / split pickers). */
 function PersonChip({

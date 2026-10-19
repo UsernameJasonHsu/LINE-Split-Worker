@@ -1,6 +1,6 @@
 import { computeExpense } from '@line-split/core';
 import { describe, expect, it } from 'vitest';
-import { expenseNotice, frequentTitles, guessCategory, pastTitles, splitPresets } from '../src/lib/suggest';
+import { expenseNotice, frequentTitles, guessCategory, pastTitles } from '../src/lib/suggest';
 
 const past = [
   { title: '晚餐', category: 'food', createdAt: 1 },
@@ -72,30 +72,5 @@ describe('frequentTitles', () => {
     ];
     expect(frequentTitles(titles)).toEqual(['taxi', '晚餐', '咖啡']);
     expect(frequentTitles(titles, 1)).toEqual(['taxi']);
-  });
-});
-
-describe('splitPresets', () => {
-  const e = (createdAt: number, ids: string[], zero: string[] = []) => ({
-    createdAt,
-    shares: [...ids.map((memberId) => ({ memberId, shareMinor: 100 })), ...zero.map((memberId) => ({ memberId, shareMinor: 0 }))],
-  });
-
-  it('finds recurring groups other than everyone, ignoring zero shares and departed members', () => {
-    const members = ['a', 'b', 'c', 'd'];
-    const expenses = [
-      e(1, ['a', 'b']),
-      e(2, ['b', 'a', 'c']),
-      e(3, ['a', 'b', 'c', 'd']), // everyone
-      e(4, ['c', 'a', 'b'], ['d']),
-      e(5, ['x', 'a']), // x left: counts as just a
-      e(6, ['a', 'b']),
-    ];
-    expect(splitPresets(expenses, members)).toEqual([
-      ['a', 'b'],
-      ['a', 'b', 'c'],
-      ['a'],
-    ]);
-    expect(splitPresets(expenses, members, 1)).toEqual([['a', 'b']]);
   });
 });

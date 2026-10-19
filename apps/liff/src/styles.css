@@ -1215,11 +1215,6 @@ body.keypad-open .page.with-footer:has(.footer-option) {
   margin-top: -4px;
 }
 
-.category-hint {
-  align-self: flex-start;
-  color: var(--muted);
-}
-
 .more-options > summary {
   cursor: pointer;
   padding: 12px 4px;
@@ -1238,4 +1233,10 @@ body.keypad-open .page.with-footer:has(.footer-option) {
 
 .more-options[open] > summary::before {
   content: '▾ ';
+}
+
+.more-summary {
+  margin-left: 8px;
+  color: var(--muted);
+  font-weight: 400;
 }
