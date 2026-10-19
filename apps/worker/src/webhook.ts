@@ -1,7 +1,9 @@
 import type { Context } from 'hono';
 import type { AppEnv, Env } from './env';
 import { LineClient } from './line/client';
+import { handleDirectPostback, handleDirectText } from './directChat';
 import {
+  DM_HELP_TEXT,
   feedbackUrl,
   HELP_TEXT,
   ledgerLinkMessage,
@@ -33,6 +35,7 @@ interface WebhookEvent {
   replyToken?: string;
   source?: Source;
   message?: { type: string; text?: string };
+  postback?: { data: string };
 }
 
 const DEFAULT_LEDGER_NAME = '分帳帳本';
@@ -69,8 +72,15 @@ async function handleEvent(event: WebhookEvent, env: Env, line: LineClient): Pro
   if (!source) return;
 
   if (source.type === 'user') {
-    if ((event.type === 'follow' || event.type === 'message') && replyToken) {
-      await line.reply(replyToken, [{ type: 'text', text: `把我邀請進 LINE 群組，就能一起分帳！\n\n${HELP_TEXT}` }]);
+    if (!replyToken) return;
+    if (event.type === 'follow') {
+      await line.reply(replyToken, [
+        { type: 'text', text: `把我邀請進 LINE 群組，就能一起分帳！\n\n${DM_HELP_TEXT}` },
+      ]);
+    } else if (event.type === 'message' && event.message?.type === 'text' && event.message.text) {
+      await handleDirectText(event.message.text, source.userId, replyToken, env, line);
+    } else if (event.type === 'postback' && event.postback) {
+      await handleDirectPostback(event.postback.data, source.userId, replyToken, env, line);
     }
     return;
   }

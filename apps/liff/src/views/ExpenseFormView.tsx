@@ -13,9 +13,10 @@ const POST_TO_CHAT_KEY = 'postNewExpenseToChat';
 
 function loadPostToChat(): boolean {
   try {
-    return localStorage.getItem(POST_TO_CHAT_KEY) !== 'off';
+    // Off unless chosen: posting every expense would clutter the group chat.
+    return localStorage.getItem(POST_TO_CHAT_KEY) === 'on';
   } catch {
-    return true;
+    return false;
   }
 }
 

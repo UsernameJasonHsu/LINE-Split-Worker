@@ -4,3 +4,5 @@ export * from './expense';
 export * from './balance';
 export * from './settle';
 export * from './categories';
+export * from './arithmetic';
+export * from './suggest';

@@ -125,9 +125,12 @@ export function App() {
         setBoot({ status: 'error', message: '請從群組中的「打開帳本」按鈕進入，或在群組輸入「帳本」取得連結' });
         return;
       }
-      if (isStandalonePage(page)) {
-        // Deep link into a page of this ledger; drop ?view= so a reload lands on home.
-        history.replaceState(null, '', `${window.location.pathname}?l=${encodeURIComponent(ledgerId)}#/${page}`);
+      const expenseId = urlParam('e');
+      if (isStandalonePage(page) || expenseId) {
+        // Deep link into a page or expense of this ledger (e.g. 修改 from the
+        // bot's chat); drop the extra params so a reload lands on home.
+        const hash = expenseId ? `#/expense/${encodeURIComponent(expenseId)}` : `#/${page}`;
+        history.replaceState(null, '', `${window.location.pathname}?l=${encodeURIComponent(ledgerId)}${hash}`);
         window.dispatchEvent(new Event(ROUTE_EVENT));
       }
       setBoot({ status: 'ready', api: createApi(getToken, ledgerId) });
