@@ -67,7 +67,7 @@ export interface ExpenseBody {
     | { type: 'exact'; items: { memberId: string; amount: string }[] }
     | { type: 'fixed_rest'; fixed: { memberId: string; amount: string }[]; restMemberIds: string[] };
   /** How it was entered (usage stats); only stored on create. */
-  source?: 'form' | 'sentence' | 'chat';
+  source?: 'form' | 'sentence';
 }
 
 export interface ExpenseSnapshot {
@@ -162,7 +162,7 @@ export interface Usage {
     sizeBytes: number | null;
     limitBytes: number;
     counts: { ledgers: number; users: number; expenses: number; feedback: number };
-    expenseSources: { form: number; sentence: number; chat: number };
+    expenseSources: { form: number; sentence: number };
   };
   line: { quota: number | null; used: number } | null;
   links: { workers: string; d1: string; lineManager: string };

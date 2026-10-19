@@ -23,7 +23,7 @@ const split = z.discriminatedUnion('type', [
   }),
 ]);
 
-export const EXPENSE_SOURCES = ['form', 'sentence', 'chat'] as const;
+export const EXPENSE_SOURCES = ['form', 'sentence'] as const;
 
 export const expenseSchema = z.object({
   title: z.string().trim().min(1).max(100),

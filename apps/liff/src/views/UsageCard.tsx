@@ -85,8 +85,7 @@ export function UsageCard({ account }: { account: AccountApi }) {
             {usage.database.counts.expenses} 筆 · 回饋 {usage.database.counts.feedback} 則
           </p>
           <p className="muted small">
-            記帳方式：表單 {usage.database.expenseSources.form} · 一句話 {usage.database.expenseSources.sentence} · 私訊{' '}
-            {usage.database.expenseSources.chat}
+            記帳方式：表單 {usage.database.expenseSources.form} · 一句話 {usage.database.expenseSources.sentence}
           </p>
 
           <div className="usage-links">

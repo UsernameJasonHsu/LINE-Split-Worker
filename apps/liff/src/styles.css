@@ -1250,3 +1250,8 @@ body.keypad-open .page.with-footer:has(.footer-option) {
   color: var(--brand);
   font-weight: 600;
 }
+
+.sentence-hint {
+  color: var(--muted);
+  font-weight: 400;
+}

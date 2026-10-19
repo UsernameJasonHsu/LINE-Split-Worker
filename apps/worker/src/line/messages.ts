@@ -1,5 +1,4 @@
 import { formatMoney, type Transfer } from '@line-split/core';
-import type { ExpenseDto } from '../services/expenses';
 
 const LINE_GREEN = '#06C755';
 
@@ -14,13 +13,8 @@ export const HELP_TEXT = [
 ].join('\n');
 
 export const DM_HELP_TEXT = [
-  '在這裡傳一句話就能記帳，不會出現在群組裡：',
-  '・午餐 1200',
-  '・1200 計程車',
-  '・拉麵 980 JPY（外幣自動換匯）',
-  '・披薩 450*2（可以用算式）',
-  '',
-  '會記成你付款、帳本全員均分；要改付款人或分攤的人，點「修改」即可。',
+  '記帳請到群組裡：輸入「帳本」，點卡片上的「➕ 記一筆」。',
+  '可以直接點選，也可以在「說一句話」輸入框打字或用語音，例如「小明付了晚餐 1200，我跟小華分」。',
 ].join('\n');
 
 export function liffUrl(liffId: string, ledgerId: string): string {
@@ -202,65 +196,5 @@ export function summaryMessage(view: SummaryView, url: string) {
       },
       footer: openLedgerFooter(url),
     },
-  };
-}
-
-export interface QuickReplyItem {
-  type: 'action';
-  action: { type: 'postback'; label: string; data: string; displayText: string };
-}
-
-/** Confirms an expense recorded from the private chat, with edit / undo buttons. */
-export function entryConfirmMessage(view: {
-  ledgerName: string;
-  expense: ExpenseDto;
-  payerName: string;
-  /** e.g. "4 人均分，每人 TWD 300". */
-  splitText: string;
-  editUrl: string;
-  undoData: string;
-  quickReply: QuickReplyItem[];
-}) {
-  const { ledgerName, expense, payerName, splitText, editUrl, undoData, quickReply } = view;
-  const amount = formatMoney(expense.amountMinor, expense.currency);
-  return {
-    type: 'flex',
-    altText: `已記到「${ledgerName}」：${expense.title} ${amount}`,
-    contents: {
-      type: 'bubble',
-      size: 'kilo',
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        spacing: 'sm',
-        contents: [
-          { type: 'text', text: `✅ 已記到「${ledgerName}」`, size: 'xs', color: '#888888', wrap: true },
-          {
-            type: 'box',
-            layout: 'horizontal',
-            contents: [
-              { type: 'text', text: expense.title, weight: 'bold', wrap: true, flex: 3 },
-              { type: 'text', text: amount, weight: 'bold', align: 'end', flex: 2 },
-            ],
-          },
-          { type: 'text', text: `${payerName} 付款；${splitText}`, size: 'sm', color: '#555555', wrap: true },
-        ],
-      },
-      footer: {
-        type: 'box',
-        layout: 'horizontal',
-        spacing: 'sm',
-        contents: [
-          { type: 'button', style: 'secondary', height: 'sm', action: { type: 'uri', label: '修改', uri: editUrl } },
-          {
-            type: 'button',
-            style: 'secondary',
-            height: 'sm',
-            action: { type: 'postback', label: '復原', data: undoData, displayText: '復原這筆' },
-          },
-        ],
-      },
-    },
-    ...(quickReply.length ? { quickReply: { items: quickReply } } : {}),
   };
 }

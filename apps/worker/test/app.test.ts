@@ -676,177 +676,27 @@ describe('hardening', () => {
   });
 });
 
-describe('bookkeeping from a private chat', () => {
-  const dm = (text: string, replyToken = 'rt-dm') =>
-    callApp(
+describe('private chat', () => {
+  it('points to the group instead of recording expenses', async () => {
+    const ledgerId = await joinGroup();
+    await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice');
+    await callApp(
       env,
-      signedWebhook([{ type: 'message', replyToken, source: { type: 'user', userId: 'Ualice' }, message: { type: 'text', text } }]),
+      signedWebhook([
+        { type: 'message', replyToken: 'rt-dm', source: { type: 'user', userId: 'Ualice' }, message: { type: 'text', text: '午餐 1200' } },
+      ]),
     );
-  const press = (data: string, replyToken = 'rt-pb') =>
-    callApp(env, signedWebhook([{ type: 'postback', replyToken, source: { type: 'user', userId: 'Ualice' }, postback: { data } }]));
-  const lastReply = () => fake.replies.at(-1)!.messages[0];
-  const expensesOf = async (ledgerId: string) =>
-    (await api('GET', `/ledgers/${ledgerId}/expenses`, 'token-alice')).body.expenses as any[];
-
-  async function secondGroup(): Promise<string> {
-    await callApp(env, signedWebhook([{ type: 'join', replyToken: 'rt-join2', source: { type: 'group', groupId: 'Cgroup2' } }]));
-    const row = await env.DB.prepare('SELECT id FROM ledgers WHERE line_group_id = ?').bind('Cgroup2').first<{ id: string }>();
-    return row!.id;
-  }
-
-  it('records "午餐 1200" paid by me and split equally, with edit and undo buttons', async () => {
-    const ledgerId = await joinGroup();
-    const alice = (await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice')).body.meMemberId as string;
-    await api('POST', `/ledgers/${ledgerId}/join`, 'token-bob');
-    await dm('午餐 1200');
-
-    const [expense] = await expensesOf(ledgerId);
-    expect(expense).toMatchObject({ title: '午餐', amountMinor: 1200, currency: 'TWD', category: 'food' });
-    expect(expense.payers).toEqual([expect.objectContaining({ memberId: alice, amountMinor: 1200 })]);
-    expect(expense.shares.map((s: any) => s.shareMinor)).toEqual([600, 600]);
-
-    const reply = JSON.stringify(lastReply());
-    expect(reply).toContain('已記到');
-    expect(reply).toContain('每人 TWD 600');
-    expect(reply).toContain(`?l=${ledgerId}&e=${expense.id}`);
-    // Nothing is posted to the group.
-    expect(fake.pushes).toHaveLength(0);
-  });
-
-  it('undoes once, and only while the expense is unchanged', async () => {
-    const ledgerId = await joinGroup();
-    await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice');
-    await dm('計程車 300');
-    const undo = lastReply().contents.footer.contents[1].action.data as string;
-
-    await press(undo);
-    expect(await expensesOf(ledgerId)).toHaveLength(0);
-    expect(lastReply().text).toContain('已刪除');
-    await press(undo);
-    expect(lastReply().text).toContain('已經刪除');
-
-    await dm('咖啡 120');
-    const [coffee] = await expensesOf(ledgerId);
-    const undoCoffee = lastReply().contents.footer.contents[1].action.data as string;
-    await api('PUT', `/ledgers/${ledgerId}/expenses/${coffee.id}`, 'token-alice', {
-      title: '咖啡',
-      currency: 'TWD',
-      amount: '150',
-      payers: [{ memberId: coffee.payers[0].memberId, amount: '150' }],
-      split: { type: 'equal', memberIds: [coffee.payers[0].memberId] },
-      revision: coffee.revision,
-    });
-    await press(undoCoffee);
-    expect(lastReply().text).toContain('被修改過');
-    expect(await expensesOf(ledgerId)).toHaveLength(1);
-  });
-
-  it('asks which ledger the first time, then uses the last one and offers to move', async () => {
-    const first = await joinGroup();
-    const second = await secondGroup();
-    await api('POST', `/ledgers/${first}/join`, 'token-alice');
-    await api('POST', `/ledgers/${second}/join`, 'token-alice');
-
-    await dm('早餐 90');
-    expect(lastReply().text).toContain('要把「早餐」記到哪一本');
-    const choices = lastReply().quickReply.items.map((i: any) => i.action);
-    expect(choices).toHaveLength(2);
-    const pick = choices.find((a: any) => JSON.parse(a.data).l === second);
-    await press(pick.data);
-    expect(await expensesOf(second)).toHaveLength(1);
-    expect(await expensesOf(first)).toHaveLength(0);
-
-    await dm('晚餐 300');
-    expect(await expensesOf(second)).toHaveLength(2);
-    const move = lastReply().quickReply.items[0].action;
-    expect(move.label).toContain('改記到');
-    await press(move.data);
-    expect((await expensesOf(second)).map((e) => e.title)).toEqual(['早餐']);
-    expect((await expensesOf(first)).map((e) => e.title)).toEqual(['晚餐']);
-    expect(JSON.stringify(lastReply())).toContain('已記到「日本旅行」');
-  });
-
-  it('converts foreign currencies and explains when it cannot', async () => {
-    const ledgerId = await joinGroup();
-    await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice');
-    fake.fxRates.JPY = { TWD: 0.2 };
-    await dm('拉麵 980 JPY');
-    expect((await expensesOf(ledgerId))[0]).toMatchObject({ currency: 'JPY', amountMinor: 980, baseAmountMinor: 196 });
-
-    await dm('咖啡 5 USD');
-    expect(lastReply().text).toContain('無法取得匯率');
-  });
-
-  it('helps people who are not in a ledger yet, or send something else', async () => {
-    await dm('午餐 1200');
-    expect(lastReply().text).toContain('還沒有加入');
-    await dm('你好');
-    expect(lastReply().text).toContain('午餐 1200');
-  });
-
-  it('ignores postbacks for ledgers the user is not in', async () => {
-    const ledgerId = await joinGroup();
-    await press(JSON.stringify({ k: 'add', l: ledgerId, t: '午餐 100' }));
-    expect(lastReply().text).toContain('不是成員');
+    expect(fake.replies.at(-1)!.messages[0].text).toContain('➕ 記一筆');
     expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM expenses').first('n')).toBe(0);
   });
-});
 
-describe('choosing who splits in a private chat', () => {
-  const dm = (text: string) =>
-    callApp(
+  it('answers buttons on old confirmation cards', async () => {
+    await callApp(
       env,
-      signedWebhook([{ type: 'message', replyToken: 'rt-dm', source: { type: 'user', userId: 'Ualice' }, message: { type: 'text', text } }]),
+      signedWebhook([
+        { type: 'postback', replyToken: 'rt-pb', source: { type: 'user', userId: 'Ualice' }, postback: { data: '{"k":"undo"}' } },
+      ]),
     );
-  const lastReply = () => fake.replies.at(-1)!.messages[0];
-
-  async function setup() {
-    const ledgerId = await joinGroup();
-    const ids: Record<string, string> = {};
-    for (const [name, token] of [['alice', 'token-alice'], ['bob', 'token-bob'], ['eve', 'token-eve']] as const) {
-      ids[name] = (await api('POST', `/ledgers/${ledgerId}/join`, token)).body.meMemberId;
-    }
-    const latestShares = async () => {
-      const [e] = (await api('GET', `/ledgers/${ledgerId}/expenses`, 'token-alice')).body.expenses;
-      return Object.fromEntries(e.shares.map((s: any) => [s.memberId, s.shareMinor]));
-    };
-    const count = async () => (await api('GET', `/ledgers/${ledgerId}/expenses`, 'token-alice')).body.expenses.length;
-    return { ids, latestShares, count };
-  }
-
-  it('splits only among the named people, matching partial names and @我', async () => {
-    const { ids, latestShares } = await setup();
-    await dm('午餐 1200 @bob @Eve');
-    expect(await latestShares()).toEqual({ [ids.bob!]: 600, [ids.eve!]: 600 });
-    expect(JSON.stringify(lastReply())).toContain('Bob、Eve均分，每人 TWD 600');
-
-    await dm('咖啡 300 @我 @bo');
-    expect(await latestShares()).toEqual({ [ids.alice!]: 150, [ids.bob!]: 150 });
-  });
-
-  it('takes fixed amounts and splits the rest among the others', async () => {
-    const { ids, latestShares } = await setup();
-    await dm('晚餐 1200 @Bob 500 @我 @Eve');
-    expect(await latestShares()).toEqual({ [ids.bob!]: 500, [ids.alice!]: 350, [ids.eve!]: 350 });
-    expect(JSON.stringify(lastReply())).toContain('Bob TWD 500、Alice TWD 350、Eve TWD 350');
-
-    await dm('房租 1000 @Bob 400 @Eve 600');
-    expect(await latestShares()).toEqual({ [ids.bob!]: 400, [ids.eve!]: 600 });
-  });
-
-  it('explains mistakes without recording anything', async () => {
-    const { count } = await setup();
-    await dm('午餐 1200 @小明');
-    expect(lastReply().text).toContain('找不到「小明」');
-    expect(lastReply().text).toContain('Alice、Bob、Eve');
-    await dm('午餐 1200 @e');
-    expect(lastReply().text).toContain('符合多位成員（Alice、Eve）');
-    await dm('午餐 1200 @Bob @bob');
-    expect(lastReply().text).toContain('重複');
-    await dm('午餐 1200 @Bob 500 @Eve 600');
-    expect(lastReply().text).toContain('和總額 TWD 1,200 不同');
-    await dm('午餐 1200 @Bob 1500 @Eve');
-    expect(lastReply().text).toContain('超過總額');
-    expect(await count()).toBe(0);
+    expect(fake.replies.at(-1)!.messages[0].text).toContain('已停止');
   });
 });

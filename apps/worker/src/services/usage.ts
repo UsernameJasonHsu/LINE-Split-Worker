@@ -10,7 +10,7 @@ export interface UsageDto {
     limitBytes: number;
     counts: { ledgers: number; users: number; expenses: number; feedback: number };
     /** Expenses by how they were entered (only those recorded since tracking began). */
-    expenseSources: { form: number; sentence: number; chat: number };
+    expenseSources: { form: number; sentence: number };
   };
   /** LINE push messages this month; null if the LINE API could not be reached. */
   line: { quota: number | null; used: number } | null;
@@ -46,7 +46,7 @@ export async function getUsage(db: D1Database, line: LineClient): Promise<UsageD
       limitBytes: D1_DATABASE_LIMIT_BYTES,
       counts: counts.results[0]!,
       expenseSources: Object.fromEntries(
-        (['form', 'sentence', 'chat'] as const).map((k) => [k, sources.results.find((r) => r.source === k)?.n ?? 0]),
+        (['form', 'sentence'] as const).map((k) => [k, sources.results.find((r) => r.source === k)?.n ?? 0]),
       ) as UsageDto['database']['expenseSources'],
     },
     line: push,

@@ -1,7 +1,6 @@
 import type { Context } from 'hono';
 import type { AppEnv, Env } from './env';
 import { LineClient } from './line/client';
-import { handleDirectPostback, handleDirectText } from './directChat';
 import {
   DM_HELP_TEXT,
   feedbackUrl,
@@ -73,14 +72,15 @@ async function handleEvent(event: WebhookEvent, env: Env, line: LineClient): Pro
 
   if (source.type === 'user') {
     if (!replyToken) return;
-    if (event.type === 'follow') {
+    if (event.type === 'follow' || event.type === 'message') {
       await line.reply(replyToken, [
         { type: 'text', text: `把我邀請進 LINE 群組，就能一起分帳！\n\n${DM_HELP_TEXT}` },
       ]);
-    } else if (event.type === 'message' && event.message?.type === 'text' && event.message.text) {
-      await handleDirectText(event.message.text, source.userId, replyToken, env, line);
-    } else if (event.type === 'postback' && event.postback) {
-      await handleDirectPostback(event.postback.data, source.userId, replyToken, env, line);
+    } else if (event.type === 'postback') {
+      // Buttons on cards from the discontinued private-chat bookkeeping.
+      await line.reply(replyToken, [
+        { type: 'text', text: '私訊記帳已停止提供，要修改或刪除支出請到帳本中操作。' },
+      ]);
     }
     return;
   }

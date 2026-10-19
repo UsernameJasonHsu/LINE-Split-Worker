@@ -21,6 +21,25 @@ import { canSendToChat, ledgerLink, trySendToChat } from '../liff';
 
 const POST_TO_CHAT_KEY = 'postNewExpenseToChat';
 
+/** How the last new expense was entered, to open the next one the same way. */
+const ENTRY_MODE_KEY = 'expenseEntryMode';
+
+function loadEntryMode(): 'sentence' | 'form' {
+  try {
+    return localStorage.getItem(ENTRY_MODE_KEY) === 'sentence' ? 'sentence' : 'form';
+  } catch {
+    return 'form';
+  }
+}
+
+function saveEntryMode(mode: 'sentence' | 'form') {
+  try {
+    localStorage.setItem(ENTRY_MODE_KEY, mode);
+  } catch {
+    // Not remembered; the form just opens on the amount next time.
+  }
+}
+
 function loadPostToChat(): boolean {
   try {
     // Off unless chosen: posting every expense would clutter the group chat.
@@ -72,6 +91,7 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
   // One-line input ("小明付了晚餐 1200，我跟小華分") that fills the fields below
   // live; a field edited by hand is no longer overwritten by it.
   const [sentence, setSentence] = useState('');
+  const [preferSentence] = useState(() => !existing && !readOnly && loadEntryMode() === 'sentence');
   const [touched, setTouched] = useState<ReadonlySet<SentenceField>>(new Set());
   const touch = (field: SentenceField) => setTouched((t) => (t.has(field) ? t : new Set(t).add(field)));
   const parsedSentence = useMemo(
@@ -150,7 +170,9 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
       const body = toPayload(form, base, members);
       if (existing) await api.updateExpense(existing.id, { ...body, revision: existing.revision });
       else {
-        await api.createExpense({ ...body, source: sentence.trim() ? 'sentence' : 'form' });
+        const source = sentence.trim() ? 'sentence' : 'form';
+        await api.createExpense({ ...body, source });
+        saveEntryMode(source);
         if (chatAvailable && postToChat && validation.ok) {
           const names = memberLookup(members);
           await trySendToChat(expenseNotice(form.title, validation.computed, names.name, ledgerLink(view.ledger.id)));
@@ -222,12 +244,23 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
               <input
                 value={sentence}
                 onChange={(e) => onSentence(e.target.value)}
+                onKeyDown={(e) => {
+                  // 完成/Enter saves once an amount is understood; Enter that
+                  // confirms an input-method candidate (注音, 拼音) doesn't.
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  e.preventDefault();
+                  if (parsedSentence?.amount) void save();
+                }}
                 placeholder="例如：小明付了晚餐 1200，我跟小華分"
-                enterKeyHint="done"
+                enterKeyHint={parsedSentence?.amount ? 'done' : 'enter'}
+                autoFocus={preferSentence}
                 maxLength={200}
               />
               {parsedSentence && (
-                <small className="sentence-result">認出：{describeParsed(parsedSentence, shortName, base)}</small>
+                <small className="sentence-result">
+                  認出：{describeParsed(parsedSentence, shortName, base)}
+                  {parsedSentence.amount && <span className="sentence-hint">　按「完成」直接儲存</span>}
+                </small>
               )}
             </label>
           )}
@@ -259,7 +292,7 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                 className="amount-input"
                 ariaLabel="金額"
                 withKeys={!readOnly}
-                autoFocus={!existing && !readOnly}
+                autoFocus={!existing && !readOnly && !preferSentence}
               />
             </div>
           </div>
