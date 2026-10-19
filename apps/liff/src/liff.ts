@@ -36,10 +36,15 @@ export function openLedger(ledgerId: string): void {
   window.location.assign(`${window.location.pathname}?l=${encodeURIComponent(ledgerId)}`);
 }
 
+/** Whether the LIFF was opened from a chat it can post into. */
+export function canSendToChat(): boolean {
+  const context = liff.getContext();
+  return !!context && ['group', 'room', 'utou'].includes(context.type);
+}
+
 /** Posts into the chat the LIFF was opened from; silently does nothing elsewhere. */
 export async function trySendToChat(text: string): Promise<boolean> {
-  const context = liff.getContext();
-  if (!context || !['group', 'room', 'utou'].includes(context.type)) return false;
+  if (!canSendToChat()) return false;
   try {
     await liff.sendMessages([{ type: 'text', text }]);
     return true;

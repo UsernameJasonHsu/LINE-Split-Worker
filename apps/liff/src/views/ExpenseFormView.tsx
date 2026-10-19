@@ -3,9 +3,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { AmountInput } from '../AmountInput';
 import { errorMessage } from '../api';
 import { navigate, type ViewProps } from '../App';
-import { Avatar, Money, TopBar } from '../components';
+import { Avatar, memberLookup, Money, TopBar } from '../components';
 import { CATEGORY_META, EXPENSE_CATEGORIES } from '../lib/categories';
 import { emptyForm, fixedRestRemainder, formFromExpense, toPayload, validate, type ExpenseForm } from '../lib/form';
+import { expenseNotice, guessCategory, pastTitles } from '../lib/suggest';
+import { canSendToChat, ledgerLink, trySendToChat } from '../liff';
+
+const POST_TO_CHAT_KEY = 'postNewExpenseToChat';
+
+function loadPostToChat(): boolean {
+  try {
+    return localStorage.getItem(POST_TO_CHAT_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
 
 const SPLIT_TABS = [
   { type: 'equal', label: '均分' },
@@ -28,6 +40,24 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<ExpenseForm>) => setForm((f) => ({ ...f, ...patch }));
+
+  // New expenses: suggest past titles and guess the category from the title
+  // until the user picks one themselves.
+  const titles = useMemo(() => (existing ? [] : pastTitles(data.expenses)), [existing, data.expenses]);
+  const [categoryPicked, setCategoryPicked] = useState(!!existing);
+  const setTitle = (title: string) =>
+    set(categoryPicked ? { title } : { title, category: guessCategory(title, data.expenses) });
+
+  const chatAvailable = !existing && canSendToChat();
+  const [postToChat, setPostToChat] = useState(loadPostToChat);
+  const togglePostToChat = (on: boolean) => {
+    setPostToChat(on);
+    try {
+      localStorage.setItem(POST_TO_CHAT_KEY, on ? 'on' : 'off');
+    } catch {
+      // Private mode etc.: the choice just isn't remembered.
+    }
+  };
 
   // Fetch today's rate when picking a foreign currency (an edited rate or the
   // original rate of an existing expense in the same currency is kept).
@@ -78,7 +108,13 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
     try {
       const body = toPayload(form, base, members);
       if (existing) await api.updateExpense(existing.id, { ...body, revision: existing.revision });
-      else await api.createExpense(body);
+      else {
+        await api.createExpense(body);
+        if (chatAvailable && postToChat && validation.ok) {
+          const names = memberLookup(members);
+          await trySendToChat(expenseNotice(form.title, validation.computed, names.name, ledgerLink(view.ledger.id)));
+        }
+      }
       await reload();
       navigate({ name: 'home' });
     } catch (err) {
@@ -135,10 +171,18 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
             <span>項目</span>
             <input
               value={form.title}
-              onChange={(e) => set({ title: e.target.value })}
+              onChange={(e) => setTitle(e.target.value)}
               placeholder="例如：晚餐、計程車"
               maxLength={100}
+              list={titles.length ? 'past-titles' : undefined}
             />
+            {titles.length > 0 && (
+              <datalist id="past-titles">
+                {titles.map((t) => (
+                  <option key={t} value={t} />
+                ))}
+              </datalist>
+            )}
             {showErrors && titleError && <small className="error">{titleError}</small>}
           </label>
 
@@ -152,7 +196,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                   role="radio"
                   aria-checked={form.category === c}
                   className={`chip ${form.category === c ? 'active' : ''}`}
-                  onClick={() => set({ category: form.category === c ? null : c })}
+                  onClick={() => {
+                    setCategoryPicked(true);
+                    set({ category: form.category === c ? null : c });
+                  }}
                 >
                   {CATEGORY_META[c].emoji} {CATEGORY_META[c].label}
                 </button>
@@ -382,6 +429,12 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
 
       {!readOnly && (
         <footer className="sticky-footer">
+          {chatAvailable && (
+            <label className="footer-option">
+              <input type="checkbox" checked={postToChat} onChange={(e) => togglePostToChat(e.target.checked)} />
+              同時傳到聊天室，讓大家知道
+            </label>
+          )}
           <button type="button" className="button primary block" onClick={save} disabled={busy}>
             {busy ? '儲存中…' : '儲存'}
           </button>
