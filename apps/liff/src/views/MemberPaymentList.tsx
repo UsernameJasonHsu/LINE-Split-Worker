@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { errorMessage } from '../api';
 import type { ViewProps } from '../App';
-import { Avatar, copyText } from '../components';
+import { Avatar } from '../components';
+import { PaymentInfoLines } from '../PaymentInfoLines';
 
 /**
  * Every member's payment details. Each person can only edit their own, and
@@ -70,22 +71,13 @@ export function MemberPaymentList({ api, data, reload, notify }: ViewProps) {
                     </span>
                   </>
                 ) : m.paymentInfo ? (
-                  <span className="payment-text">{m.paymentInfo}</span>
+                  <PaymentInfoLines info={m.paymentInfo} notify={notify} className="payment-text" />
                 ) : (
                   <span className="muted small">尚未提供</span>
                 )}
               </div>
               {!editing && (
                 <span className="row-actions">
-                  {m.paymentInfo && (
-                    <button
-                      type="button"
-                      className="link-button small"
-                      onClick={async () => (await copyText(m.paymentInfo!)) && notify('已複製收款資訊')}
-                    >
-                      複製
-                    </button>
-                  )}
                   {isMe && (
                     <button type="button" className="link-button small" onClick={() => setDraft(m.paymentInfo ?? '')}>
                       {m.paymentInfo ? '編輯' : '填寫'}

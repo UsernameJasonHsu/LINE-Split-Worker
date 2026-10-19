@@ -599,12 +599,40 @@ textarea:focus {
   outline-offset: -1px;
 }
 
-.payment-info {
+.payment-lines {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   color: var(--muted);
+}
+
+.payment-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.payment-line-text {
   word-break: break-all;
+}
+
+.copy-chip {
+  flex: none;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--brand);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.copy-chip:active {
+  background: var(--brand);
+  color: var(--brand-ink);
 }
 
 .link-button.small {

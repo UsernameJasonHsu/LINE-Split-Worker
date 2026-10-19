@@ -4,6 +4,7 @@ import { errorMessage } from '../api';
 import { navigate, type ViewProps } from '../App';
 import { Avatar, copyText, formatDate, memberLookup, Money, TopBar } from '../components';
 import { ledgerLink, shareText, trySendToChat } from '../liff';
+import { PaymentInfoLines } from '../PaymentInfoLines';
 import { MemberPaymentList } from './MemberPaymentList';
 
 export function SettleView({ api, data, reload, notify }: ViewProps) {
@@ -99,8 +100,24 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
                   <span>
                     {members.name(t.from)} → {members.name(t.to)}
                   </span>
-                  <Money minor={t.amountMinor} currency={base} />
-                  <PaymentInfoLine info={members.get(t.to)?.paymentInfo ?? null} notify={notify} />
+                  <span className="payment-line">
+                    <Money minor={t.amountMinor} currency={base} />
+                    <button
+                      type="button"
+                      className="copy-chip"
+                      onClick={async () =>
+                        (await copyText(formatMinor(t.amountMinor, base))) &&
+                        notify(`已複製金額 ${formatMinor(t.amountMinor, base)}`)
+                      }
+                    >
+                      複製金額
+                    </button>
+                  </span>
+                  {members.get(t.to)?.paymentInfo ? (
+                    <PaymentInfoLines info={members.get(t.to)!.paymentInfo!} notify={notify} className="small" />
+                  ) : (
+                    <span className="muted small">{members.name(t.to)} 尚未提供收款資訊</span>
+                  )}
                 </span>
                 {!closed && (
                   <button type="button" className="button small" disabled={busy} onClick={() => markPaid(t)}>
@@ -228,21 +245,5 @@ export function SettleView({ api, data, reload, notify }: ViewProps) {
         </>
       )}
     </main>
-  );
-}
-
-function PaymentInfoLine({ info, notify }: { info: string | null; notify: (m: string) => void }) {
-  if (!info) return null;
-  return (
-    <span className="payment-info">
-      <span className="small">收款：{info}</span>
-      <button
-        type="button"
-        className="link-button small"
-        onClick={async () => (await copyText(info)) && notify('已複製收款資訊')}
-      >
-        複製
-      </button>
-    </span>
   );
 }
