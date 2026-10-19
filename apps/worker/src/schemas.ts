@@ -23,6 +23,8 @@ const split = z.discriminatedUnion('type', [
   }),
 ]);
 
+export const EXPENSE_SOURCES = ['form', 'sentence', 'chat'] as const;
+
 export const expenseSchema = z.object({
   title: z.string().trim().min(1).max(100),
   currency,
@@ -34,6 +36,8 @@ export const expenseSchema = z.object({
   note: z.string().trim().max(500).nullable().optional(),
   payers: z.array(z.object({ memberId, amount: decimal })).min(1).max(100),
   split,
+  /** How it was entered (for usage stats); only stored on create. */
+  source: z.enum(EXPENSE_SOURCES).optional(),
 });
 export type ExpenseBody = z.infer<typeof expenseSchema>;
 

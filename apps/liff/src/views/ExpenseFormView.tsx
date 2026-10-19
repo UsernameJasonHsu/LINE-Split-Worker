@@ -15,6 +15,7 @@ import {
   validate,
   type ExpenseForm,
 } from '../lib/form';
+import { describeParsed, parseForForm, sentencePatch, type SentenceField } from '../lib/sentenceForm';
 import { expenseNotice, frequentTitles, guessCategory, pastTitles } from '../lib/suggest';
 import { canSendToChat, ledgerLink, trySendToChat } from '../liff';
 
@@ -67,6 +68,26 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
     form.date === toDateInput(Date.now()) ? '今天' : form.date.replace(/^\d{4}-0?(\d+)-0?(\d+)$/, '$1/$2'),
     ...(form.note.trim() ? ['有備註'] : []),
   ].join('・');
+
+  // One-line input ("小明付了晚餐 1200，我跟小華分") that fills the fields below
+  // live; a field edited by hand is no longer overwritten by it.
+  const [sentence, setSentence] = useState('');
+  const [touched, setTouched] = useState<ReadonlySet<SentenceField>>(new Set());
+  const touch = (field: SentenceField) => setTouched((t) => (t.has(field) ? t : new Set(t).add(field)));
+  const parsedSentence = useMemo(
+    () => (sentence.trim() ? parseForForm(sentence, members, view.meMemberId) : null),
+    [sentence, members, view.meMemberId],
+  );
+  const onSentence = (text: string) => {
+    setSentence(text);
+    const patch = sentencePatch(parseForForm(text, members, view.meMemberId), touched, members, view.meMemberId, base);
+    if (patch.currency !== undefined && patch.currency !== form.currency) {
+      Object.assign(patch, { fxRateEdited: false, fxRate: '' });
+    }
+    if (patch.title !== undefined && !categoryPicked) patch.category = guessCategory(patch.title, data.expenses);
+    set(patch);
+  };
+  const shortName = (id: string) => (id === view.meMemberId ? '我' : (members.find((m) => m.id === id)?.displayName ?? '?'));
 
   const chatAvailable = !existing && canSendToChat();
   const [postToChat, setPostToChat] = useState(loadPostToChat);
@@ -129,7 +150,7 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
       const body = toPayload(form, base, members);
       if (existing) await api.updateExpense(existing.id, { ...body, revision: existing.revision });
       else {
-        await api.createExpense(body);
+        await api.createExpense({ ...body, source: sentence.trim() ? 'sentence' : 'form' });
         if (chatAvailable && postToChat && validation.ok) {
           const names = memberLookup(members);
           await trySendToChat(expenseNotice(form.title, validation.computed, names.name, ledgerLink(view.ledger.id)));
@@ -159,23 +180,31 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
   }
 
   const shareOf = new Map(validation.ok ? validation.computed.shares.map((s) => [s.memberId, s]) : []);
-  const step = (id: string, delta: number) =>
+  const step = (id: string, delta: number) => {
+    touch('split');
     set({ weights: { ...form.weights, [id]: Math.max(0, (form.weights[id] ?? 0) + delta) } });
-  const toggle = (id: string) =>
+  };
+  const toggle = (id: string) => {
+    touch('split');
     set({ equalIds: form.equalIds.includes(id) ? form.equalIds.filter((x) => x !== id) : [...form.equalIds, id] });
+  };
   const allSelected = form.equalIds.length === members.length;
-  const toggleRest = (id: string) =>
+  const toggleRest = (id: string) => {
+    touch('split');
     set({ restIds: form.restIds.includes(id) ? form.restIds.filter((x) => x !== id) : [...form.restIds, id] });
+  };
   const remainder = form.splitType === 'fixed_rest' ? fixedRestRemainder(form, members) : null;
 
   // Switching to several payers starts from "the single payer paid everything".
-  const togglePayerMode = () =>
-    form.multiPayer
-      ? set({
-          multiPayer: false,
-          payerId: members.find((m) => (form.payerAmounts[m.id] ?? '').trim() !== '')?.id ?? form.payerId,
-        })
-      : set({ multiPayer: true, payerAmounts: { [form.payerId]: form.amount } });
+  const togglePayerMode = () => {
+    touch('payer');
+    if (form.multiPayer) {
+      set({
+        multiPayer: false,
+        payerId: members.find((m) => (form.payerAmounts[m.id] ?? '').trim() !== '')?.id ?? form.payerId,
+      });
+    } else set({ multiPayer: true, payerAmounts: { [form.payerId]: form.amount } });
+  };
 
   return (
     <main className={readOnly ? 'page' : 'page with-footer'}>
@@ -187,13 +216,32 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
 
       <fieldset className="plain" disabled={readOnly}>
         <section className="card form">
+          {!existing && !readOnly && (
+            <label className="field sentence-field">
+              <span>說一句話（可用鍵盤的語音輸入）</span>
+              <input
+                value={sentence}
+                onChange={(e) => onSentence(e.target.value)}
+                placeholder="例如：小明付了晚餐 1200，我跟小華分"
+                enterKeyHint="done"
+                maxLength={200}
+              />
+              {parsedSentence && (
+                <small className="sentence-result">認出：{describeParsed(parsedSentence, shortName, base)}</small>
+              )}
+            </label>
+          )}
+
           <div className="field">
             <span>金額</span>
             <div className="amount-row">
               <select
                 aria-label="幣別"
                 value={form.currency}
-                onChange={(e) => set({ currency: e.target.value, fxRateEdited: false, fxRate: '' })}
+                onChange={(e) => {
+                  touch('currency');
+                  set({ currency: e.target.value, fxRateEdited: false, fxRate: '' });
+                }}
               >
                 {SUPPORTED_CURRENCIES.map((c) => (
                   <option key={c} value={c}>
@@ -203,7 +251,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
               </select>
               <AmountInput
                 value={form.amount}
-                onChange={(amount) => set({ amount })}
+                onChange={(amount) => {
+                  touch('amount');
+                  set({ amount });
+                }}
                 currency={form.currency}
                 className="amount-input"
                 ariaLabel="金額"
@@ -237,7 +288,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
             <span>項目</span>
             <input
               value={form.title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                touch('title');
+                setTitle(e.target.value);
+              }}
               placeholder="例如：晚餐、計程車"
               maxLength={100}
               list={titles.length ? 'past-titles' : undefined}
@@ -258,7 +312,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                   key={t}
                   type="button"
                   className={`chip ${form.title.trim() === t ? 'active' : ''}`}
-                  onClick={() => setTitle(t)}
+                  onClick={() => {
+                    touch('title');
+                    setTitle(t);
+                  }}
                 >
                   {t}
                 </button>
@@ -286,7 +343,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                     <AmountInput
                       className="exact-input"
                       value={form.payerAmounts[m.id] ?? ''}
-                      onChange={(v) => setForm((f) => ({ ...f, payerAmounts: { ...f.payerAmounts, [m.id]: v } }))}
+                      onChange={(v) => {
+                        touch('payer');
+                        setForm((f) => ({ ...f, payerAmounts: { ...f.payerAmounts, [m.id]: v } }));
+                      }}
                       currency={form.currency}
                       ariaLabel={`${m.displayName} 付的金額`}
                     />
@@ -302,7 +362,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                     me={m.id === view.meMemberId}
                     active={form.payerId === m.id}
                     role="radio"
-                    onClick={() => set({ payerId: m.id })}
+                    onClick={() => {
+                      touch('payer');
+                      set({ payerId: m.id });
+                    }}
                   />
                 ))}
               </div>
@@ -319,7 +382,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                 <button
                   type="button"
                   className="link-button"
-                  onClick={() => set({ equalIds: allSelected ? [] : members.map((m) => m.id) })}
+                  onClick={() => {
+                    touch('split');
+                    set({ equalIds: allSelected ? [] : members.map((m) => m.id) });
+                  }}
                 >
                   {allSelected ? '全部取消' : '全選'}
                 </button>
@@ -333,7 +399,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                 role="tab"
                 aria-selected={form.splitType === t.type}
                 className={form.splitType === t.type ? 'active' : ''}
-                onClick={() => set({ splitType: t.type })}
+                onClick={() => {
+                  touch('split');
+                  set({ splitType: t.type });
+                }}
               >
                 {t.label}
               </button>
@@ -392,7 +461,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                     <AmountInput
                       className="exact-input"
                       value={form.exact[m.id] ?? ''}
-                      onChange={(v) => setForm((f) => ({ ...f, exact: { ...f.exact, [m.id]: v } }))}
+                      onChange={(v) => {
+                        touch('split');
+                        setForm((f) => ({ ...f, exact: { ...f.exact, [m.id]: v } }));
+                      }}
                       currency={form.currency}
                       ariaLabel={`${m.displayName} 的金額`}
                     />
@@ -402,7 +474,10 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
                       <AmountInput
                         className="exact-input"
                         value={form.fixed[m.id] ?? ''}
-                        onChange={(v) => setForm((f) => ({ ...f, fixed: { ...f.fixed, [m.id]: v } }))}
+                        onChange={(v) => {
+                          touch('split');
+                          setForm((f) => ({ ...f, fixed: { ...f.fixed, [m.id]: v } }));
+                        }}
                         currency={form.currency}
                         placeholder="指定"
                         ariaLabel={`${m.displayName} 的指定金額`}

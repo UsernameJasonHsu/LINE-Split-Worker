@@ -44,6 +44,7 @@ describe('GET /api/admin/usage', () => {
       amount: '100',
       payers: [{ memberId: alice, amount: '100' }],
       split: { type: 'equal', memberIds: [alice] },
+      source: 'sentence',
     });
     await api('POST', '/feedback', 'token-alice', { category: 'idea', message: 'hi' });
     fake.lineQuota.used = 150;
@@ -52,6 +53,7 @@ describe('GET /api/admin/usage', () => {
     expect(usage.database).toMatchObject({
       limitBytes: 500 * 1024 * 1024,
       counts: { ledgers: 1, users: 1, expenses: 1, feedback: 1 },
+      expenseSources: { form: 0, sentence: 1, chat: 0 },
     });
     expect(usage.database.sizeBytes).toEqual(expect.any(Number));
     expect(usage.line).toEqual({ quota: 200, used: 150 });

@@ -1240,3 +1240,13 @@ body.keypad-open .page.with-footer:has(.footer-option) {
   color: var(--muted);
   font-weight: 400;
 }
+
+/* One-line expense input */
+.sentence-field input {
+  border-color: var(--brand);
+}
+
+.sentence-result {
+  color: var(--brand);
+  font-weight: 600;
+}

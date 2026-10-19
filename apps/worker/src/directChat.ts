@@ -214,6 +214,7 @@ async function createEntry(
       category: guessCategory(entry.title, past),
       payers: [{ memberId: me.id, amount }],
       split,
+      source: 'chat',
     });
   } catch (err) {
     if (err instanceof HttpError && err.status === 502) return '暫時無法取得匯率，請到帳本中手動輸入匯率記帳。';

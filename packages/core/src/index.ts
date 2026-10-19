@@ -6,3 +6,4 @@ export * from './settle';
 export * from './categories';
 export * from './arithmetic';
 export * from './suggest';
+export * from './sentence';

@@ -307,8 +307,8 @@ export async function createExpense(
     db
       .prepare(
         `INSERT INTO expenses (id, ledger_id, title, currency, amount_minor, fx_rate, fx_source, base_amount_minor,
-           split_type, category, note, spent_at, created_by, created_at, updated_at, revision)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           split_type, category, note, spent_at, created_by, created_at, updated_at, revision, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         id,
@@ -327,6 +327,7 @@ export async function createExpense(
         now,
         now,
         crypto.randomUUID(),
+        body.source ?? null,
       ),
     ...computed.payers.map((p) =>
       db

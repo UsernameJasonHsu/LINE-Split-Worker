@@ -9,6 +9,8 @@ export interface UsageDto {
     sizeBytes: number | null;
     limitBytes: number;
     counts: { ledgers: number; users: number; expenses: number; feedback: number };
+    /** Expenses by how they were entered (only those recorded since tracking began). */
+    expenseSources: { form: number; sentence: number; chat: number };
   };
   /** LINE push messages this month; null if the LINE API could not be reached. */
   line: { quota: number | null; used: number } | null;
@@ -16,7 +18,7 @@ export interface UsageDto {
 }
 
 export async function getUsage(db: D1Database, line: LineClient): Promise<UsageDto> {
-  const [counts, push] = await Promise.all([
+  const [counts, sources, push] = await Promise.all([
     db
       .prepare(
         `SELECT
@@ -26,6 +28,12 @@ export async function getUsage(db: D1Database, line: LineClient): Promise<UsageD
            (SELECT COUNT(*) FROM feedback) AS feedback`,
       )
       .all<UsageDto['database']['counts']>(),
+    db
+      .prepare(
+        `SELECT source, COUNT(*) AS n FROM expenses
+         WHERE deleted_at IS NULL AND source IS NOT NULL GROUP BY source`,
+      )
+      .all<{ source: string; n: number }>(),
     line.getPushQuota().catch((err) => {
       console.error('Failed to read LINE push quota', err);
       return null;
@@ -37,6 +45,9 @@ export async function getUsage(db: D1Database, line: LineClient): Promise<UsageD
       sizeBytes: typeof counts.meta.size_after === 'number' ? counts.meta.size_after : null,
       limitBytes: D1_DATABASE_LIMIT_BYTES,
       counts: counts.results[0]!,
+      expenseSources: Object.fromEntries(
+        (['form', 'sentence', 'chat'] as const).map((k) => [k, sources.results.find((r) => r.source === k)?.n ?? 0]),
+      ) as UsageDto['database']['expenseSources'],
     },
     line: push,
     links: {
