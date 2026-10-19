@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateAmount, isExpression, resolveAmount } from '../src/lib/calc';
+import { applyKey, evaluateAmount, isExpression, resolveAmount } from '../src/lib/calc';
 
 describe('evaluateAmount', () => {
   it('does arithmetic with precedence and parentheses', () => {
@@ -54,5 +54,20 @@ describe('isExpression / resolveAmount', () => {
     expect(resolveAmount('10/3', 'USD')).toBe('3.33');
     // Broken expressions are passed through so validation can explain.
     expect(resolveAmount('5/0', 'TWD')).toBe('5/0');
+  });
+});
+
+describe('applyKey', () => {
+  it('inserts at the caret and replaces a selection', () => {
+    expect(applyKey('', 0, 0, '1')).toEqual({ value: '1', caret: 1 });
+    expect(applyKey('100', 3, 3, '+')).toEqual({ value: '100+', caret: 4 });
+    expect(applyKey('100', 1, 1, '5')).toEqual({ value: '1500', caret: 2 });
+    expect(applyKey('1234', 1, 3, '×')).toEqual({ value: '1×4', caret: 2 });
+  });
+
+  it('backspaces the character before the caret or the selection', () => {
+    expect(applyKey('100+', 4, 4, 'backspace')).toEqual({ value: '100', caret: 3 });
+    expect(applyKey('100', 0, 0, 'backspace')).toEqual({ value: '100', caret: 0 });
+    expect(applyKey('1234', 1, 3, 'backspace')).toEqual({ value: '14', caret: 1 });
   });
 });
