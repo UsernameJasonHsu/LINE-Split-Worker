@@ -1167,3 +1167,75 @@ body.keypad-open .page.with-footer:has(.footer-option) {
 .center {
   text-align: center;
 }
+
+/* Expense form quick pickers */
+.person-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.person-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 2px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-2);
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.person-chip.active {
+  border-color: var(--brand);
+  background: var(--surface);
+  opacity: 1;
+}
+
+.person-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.person-note {
+  font-size: 12px;
+  color: var(--brand);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-titles {
+  margin-top: -4px;
+}
+
+.category-hint {
+  align-self: flex-start;
+  color: var(--muted);
+}
+
+.more-options > summary {
+  cursor: pointer;
+  padding: 12px 4px;
+  color: var(--brand);
+  font-weight: 600;
+  list-style: none;
+}
+
+.more-options > summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-options > summary::before {
+  content: '▸ ';
+}
+
+.more-options[open] > summary::before {
+  content: '▾ ';
+}

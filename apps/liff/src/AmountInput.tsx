@@ -56,6 +56,7 @@ export function AmountInput({
   placeholder = '0',
   ariaLabel,
   withKeys = false,
+  autoFocus = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -64,6 +65,8 @@ export function AmountInput({
   placeholder?: string;
   ariaLabel?: string;
   withKeys?: boolean;
+  /** Focus on mount (opening the keypad on touch devices). */
+  autoFocus?: boolean;
 }) {
   const decimals = decimalsOf(currency);
   const useKeypad = withKeys && isTouch();
@@ -80,6 +83,11 @@ export function AmountInput({
     const result = evaluateAmount(value, decimals);
     if (result !== null) onChange(result);
   };
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
+  }, []);
 
   useLayoutEffect(() => {
     const caret = pendingCaret.current;

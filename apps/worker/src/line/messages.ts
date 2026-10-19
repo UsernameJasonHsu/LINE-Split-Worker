@@ -5,12 +5,12 @@ const LINE_GREEN = '#06C755';
 
 export const HELP_TEXT = [
   '分帳小幫手指令：',
-  '・帳本：取得記帳連結',
+  '・帳本：取得「➕ 記一筆」按鈕與帳本連結',
   '・結算：查看誰該付誰',
   '・回饋：回報問題或提出建議',
   '・說明：顯示這段說明',
   '',
-  '想快速記帳又不想洗版？加我好友後私訊「午餐 1200」就能記到帳本。',
+  '小技巧：把「帳本」的回覆卡片長按「設為公告」，之後隨時從聊天室上方一鍵記帳。',
 ].join('\n');
 
 export const DM_HELP_TEXT = [
@@ -20,12 +20,7 @@ export const DM_HELP_TEXT = [
   '・拉麵 980 JPY（外幣自動換匯）',
   '・披薩 450*2（可以用算式）',
   '',
-  '預設是你付款、帳本全員均分。要指定誰分攤，在後面加 @名字：',
-  '・午餐 1200 @小明 @小華（只有他們兩人均分）',
-  '・午餐 1200 @我 @小明（你和小明均分）',
-  '・午餐 1200 @小明 500 @我 @小華（小明出 500，其餘你和小華均分）',
-  '',
-  '名字打部分即可；記好後也可以點「修改」再調整。',
+  '會記成你付款、帳本全員均分；要改付款人或分攤的人，點「修改」即可。',
 ].join('\n');
 
 export function liffUrl(liffId: string, ledgerId: string): string {
@@ -41,14 +36,28 @@ export function adminFeedbackUrl(liffId: string): string {
   return `https://liff.line.me/${liffId}?view=admin`;
 }
 
-const openLedgerFooter = (url: string) => ({
+/** LIFF link that opens straight into a new expense. */
+export const newExpenseUrl = (url: string) => `${url}&e=new`;
+
+const openLedgerFooter = (url: string, { withAdd = false } = {}) => ({
   type: 'box',
   layout: 'vertical',
+  spacing: 'sm',
   contents: [
+    ...(withAdd
+      ? [
+          {
+            type: 'button',
+            style: 'primary',
+            color: LINE_GREEN,
+            action: { type: 'uri', label: '➕ 記一筆', uri: newExpenseUrl(url) },
+          },
+        ]
+      : []),
     {
       type: 'button',
-      style: 'primary',
-      color: LINE_GREEN,
+      style: withAdd ? 'secondary' : 'primary',
+      ...(withAdd ? {} : { color: LINE_GREEN }),
       action: { type: 'uri', label: '打開帳本', uri: url },
     },
   ],
@@ -75,7 +84,7 @@ export function welcomeMessage(ledgerName: string, url: string) {
           },
         ],
       },
-      footer: openLedgerFooter(url),
+      footer: openLedgerFooter(url, { withAdd: true }),
     },
   };
 }
@@ -90,9 +99,13 @@ export function ledgerLinkMessage(ledgerName: string, url: string) {
       body: {
         type: 'box',
         layout: 'vertical',
-        contents: [{ type: 'text', text: `📒 ${ledgerName}`, weight: 'bold', wrap: true }],
+        spacing: 'sm',
+        contents: [
+          { type: 'text', text: `📒 ${ledgerName}`, weight: 'bold', wrap: true },
+          { type: 'text', text: '長按這則訊息「設為公告」，之後隨時一鍵記帳', size: 'xs', color: '#888888', wrap: true },
+        ],
       },
-      footer: openLedgerFooter(url),
+      footer: openLedgerFooter(url, { withAdd: true }),
     },
   };
 }

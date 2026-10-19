@@ -100,6 +100,17 @@ describe('webhook', () => {
     expect(fake.replies).toHaveLength(1);
     expect(JSON.stringify(fake.replies[0]!.messages)).toContain('https://liff.line.me/');
   });
+
+  it('offers a one-tap "記一筆" link that opens a new expense', async () => {
+    const ledgerId = await joinGroup();
+    await callApp(
+      env,
+      signedWebhook([{ type: 'message', replyToken: 'rt-l', source: groupSource('Ualice'), message: { type: 'text', text: '帳本' } }]),
+    );
+    const buttons = fake.replies.at(-1)!.messages[0].contents.footer.contents.map((b: any) => b.action);
+    expect(buttons[0]).toMatchObject({ label: '➕ 記一筆', uri: `https://liff.line.me/${TEST_ENV.LIFF_ID}?l=${ledgerId}&e=new` });
+    expect(buttons[1]).toMatchObject({ label: '打開帳本' });
+  });
 });
 
 describe('api auth', () => {
