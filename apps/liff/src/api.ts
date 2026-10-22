@@ -168,6 +168,28 @@ export interface Usage {
   links: { workers: string; d1: string; lineManager: string };
 }
 
+export interface UserStat {
+  lineUserId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  ledgers: number;
+  openLedgers: number;
+  expenses: number;
+  sentenceExpenses: number;
+  actions: number;
+  feedback: number;
+  opens: number;
+  activeDays: number;
+  firstSeenAt: number | null;
+  lastActiveAt: number | null;
+}
+
+export interface UserStats {
+  users: UserStat[];
+  daily: { day: string; users: number; opens: number }[];
+  trackingSince: string | null;
+}
+
 type Request = <T>(method: string, path: string, body?: unknown) => Promise<T>;
 
 function makeRequest(getIdToken: () => string | null): Request {
@@ -208,6 +230,7 @@ export function createAccountApi(getIdToken: () => string | null) {
       (await request<{ feedback: AdminFeedback[] }>('GET', `/api/admin/feedback${status ? `?status=${status}` : ''}`))
         .feedback,
     adminUsage: () => request<Usage>('GET', '/api/admin/usage'),
+    adminUsers: () => request<UserStats>('GET', '/api/admin/users'),
     updateFeedback: (id: string, patch: { status?: FeedbackStatus; adminNote?: string | null; notify?: boolean }) =>
       request<AdminFeedback & { notified: boolean }>('PATCH', `/api/admin/feedback/${encodeURIComponent(id)}`, patch),
   };

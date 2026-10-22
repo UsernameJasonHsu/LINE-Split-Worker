@@ -884,6 +884,124 @@ textarea:focus {
   text-decoration: none;
 }
 
+/* Admin: per-user stats */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-label,
+.kpi-hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.daily-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.daily-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 72px;
+  border-bottom: 1px solid var(--border);
+}
+
+.daily-bar {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.daily-bar span {
+  width: 100%;
+  min-height: 1px;
+  border-radius: 4px 4px 0 0;
+  background: var(--brand);
+  opacity: 0.75;
+}
+
+.daily-bar.picked span,
+.daily-bar:hover span {
+  opacity: 1;
+}
+
+.daily-axis {
+  display: flex;
+  justify-content: space-between;
+}
+
+.inline-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-stats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-stat {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.user-stat-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.user-stat-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.user-stat-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-stat-nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  color: var(--muted);
+}
+
 /* Amount calculator */
 .amount-field {
   display: flex;

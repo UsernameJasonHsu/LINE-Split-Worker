@@ -15,7 +15,7 @@ export const TEST_ENV = {
   FEEDBACK_PUSH: 'on',
 };
 
-const TABLES = ['feedback', 'payment_profiles', 'audit_logs', 'fx_rates', 'settlements', 'expense_shares', 'expense_payers', 'expenses', 'members', 'ledgers'];
+const TABLES = ['user_visits', 'feedback', 'payment_profiles', 'audit_logs', 'fx_rates', 'settlements', 'expense_shares', 'expense_payers', 'expenses', 'members', 'ledgers'];
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'migrations');
 export const MIGRATIONS = readdirSync(MIGRATIONS_DIR).sort();

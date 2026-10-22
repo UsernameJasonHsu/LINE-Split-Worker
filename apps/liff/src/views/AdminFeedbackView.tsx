@@ -3,6 +3,7 @@ import { errorMessage, type AccountApi, type AdminFeedback, type FeedbackStatus 
 import { formatDate, TopBar } from '../components';
 import { CATEGORY_LABELS, STATUS_LABELS } from '../lib/feedback';
 import { UsageCard } from './UsageCard';
+import { UserStatsCard } from './UserStatsCard';
 
 const FILTERS: { key: FeedbackStatus | 'all'; label: string }[] = [
   { key: 'new', label: STATUS_LABELS.new },
@@ -41,6 +42,7 @@ export function AdminFeedbackView({
     <main className="page">
       <TopBar title="回饋管理" onBack={onBack} />
       <UsageCard account={account} />
+      <UserStatsCard account={account} />
       <div className="chips" role="tablist">
         {FILTERS.map((f) => (
           <button

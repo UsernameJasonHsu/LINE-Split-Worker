@@ -46,6 +46,7 @@ import {
 import { listAudit } from './services/audit';
 import { getPaymentInfo, setPaymentInfo } from './services/payments';
 import { getUsage } from './services/usage';
+import { getUserStats, recordVisit } from './services/userStats';
 import { createSettlement, deleteSettlement, getSummary, listSettlements } from './services/settlements';
 
 type Ctx = Context<AppEnv>;
@@ -275,7 +276,14 @@ function requireAdmin(c: Ctx): void {
   if (!adminIds(c).includes(c.get('user').lineUserId)) throw new HttpError(403, 'Admins only');
 }
 
-api.get('/me', (c) => c.json({ isAdmin: adminIds(c).includes(c.get('user').lineUserId) }));
+/** The app calls this once each time it opens a ledger, so it also counts the open for usage stats. */
+api.get('/me', (c) => {
+  const { lineUserId } = c.get('user');
+  c.executionCtx.waitUntil(
+    recordVisit(c.env.DB, lineUserId).catch((err) => console.error('Failed to record visit', err)),
+  );
+  return c.json({ isAdmin: adminIds(c).includes(lineUserId) });
+});
 
 api.post('/feedback', async (c) => {
   const body = await parseJson(c, feedbackSchema);
@@ -335,6 +343,11 @@ api.patch('/admin/feedback/:id', async (c) => {
 api.get('/admin/usage', async (c) => {
   requireAdmin(c);
   return c.json(await getUsage(c.env.DB, new LineClient(c.env.LINE_CHANNEL_ACCESS_TOKEN)));
+});
+
+api.get('/admin/users', async (c) => {
+  requireAdmin(c);
+  return c.json(await getUserStats(c.env.DB));
 });
 
 /** The caller's own payment details; nobody can read or change another user's here. */

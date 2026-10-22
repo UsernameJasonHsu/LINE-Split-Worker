@@ -2,7 +2,13 @@ import { formatMoney } from '@line-split/core';
 import type { ReactNode } from 'react';
 import type { Member } from './api';
 
-export function Avatar({ member, size = 32 }: { member: Member | undefined; size?: number }) {
+export function Avatar({
+  member,
+  size = 32,
+}: {
+  member: Pick<Member, 'displayName' | 'avatarUrl'> | undefined;
+  size?: number;
+}) {
   const style = { width: size, height: size, fontSize: size * 0.42 };
   if (member?.avatarUrl) return <img className="avatar" src={member.avatarUrl} alt="" style={style} />;
   return (
