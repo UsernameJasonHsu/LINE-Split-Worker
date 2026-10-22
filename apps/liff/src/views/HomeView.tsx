@@ -5,6 +5,7 @@ import type { Expense } from '../api';
 import { categoryMeta, CATEGORY_META, EXPENSE_CATEGORIES } from '../lib/categories';
 import { DEFAULT_FILTER, filterExpenses, isFilterActive, type ExpenseFilter } from '../lib/filter';
 import { openLedger } from '../liff';
+import { MyTransfers } from './MyTransfers';
 import { StartNextLedger } from './StartNextLedger';
 
 // Survives navigating to an expense and back (the view remounts).
@@ -89,6 +90,7 @@ export function HomeView(props: ViewProps) {
             </>
           )}
         </p>
+        {closedAt === null && <MyTransfers {...props} />}
         {closedAt === null ? (
           <div className="button-row">
             <button type="button" className="button primary" onClick={() => navigate({ name: 'expense', id: null })}>

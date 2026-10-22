@@ -1,63 +1,34 @@
 import { formatMinor, formatMoney, SUPPORTED_CURRENCIES, type Transfer } from '@line-split/core';
 import { useState } from 'react';
-import { ApiError, errorMessage } from '../api';
 import { navigate, type ViewProps } from '../App';
 import { Avatar, copyText, formatDate, memberLookup, Money, TopBar } from '../components';
+import { settlementText } from '../lib/settle';
 import { ledgerLink, shareText, trySendToChat } from '../liff';
 import { PaymentInfoLines } from '../PaymentInfoLines';
+import { useSettleActions } from '../useSettleActions';
 import { MemberPaymentList } from './MemberPaymentList';
 
-export function SettleView({ api, data, reload, notify }: ViewProps) {
+export function SettleView(props: ViewProps) {
+  const { api, data, reload, notify } = props;
   const { view, summary, settlements, expenses } = data;
   const base = view.ledger.baseCurrency;
   const members = memberLookup(view.members);
-  const [busy, setBusy] = useState(false);
+  const { busy, run, markPaid: confirmPaid } = useSettleActions(props);
   const [name, setName] = useState(view.ledger.name);
   const closed = view.ledger.closedAt !== null;
 
-  async function run(action: () => Promise<unknown>, done?: string) {
-    setBusy(true);
-    try {
-      await action();
-      await reload();
-      if (done) notify(done);
-    } catch (err) {
-      notify(err instanceof Error && !('status' in err) ? err.message : errorMessage(err));
-      // Someone else changed the ledger meanwhile; show the current state.
-      if (err instanceof ApiError && err.status === 409) void reload();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const markPaid = (t: Transfer) => {
-    const text = `確認 ${members.name(t.from)} 已付給 ${members.name(t.to)} ${formatMoney(t.amountMinor, base)}？`;
-    if (!window.confirm(text)) return;
-    void run(
-      () => api.createSettlement({ fromMemberId: t.from, toMemberId: t.to, amount: formatMinor(t.amountMinor, base) }),
-      '已記錄還款',
-    );
-  };
+  const markPaid = (t: Transfer) =>
+    confirmPaid(t, `確認 ${members.name(t.from)} 已付給 ${members.name(t.to)} ${formatMoney(t.amountMinor, base)}？`);
 
   const shareSummary = () => {
-    const lines =
-      summary.transfers.length === 0
-        ? ['目前沒有待結清的款項 🎉']
-        : summary.transfers.map(
-            (t) => `・${members.name(t.from)} → ${members.name(t.to)}  ${formatMoney(t.amountMinor, base)}`,
-          );
-    const payees = [...new Set(summary.transfers.map((t) => t.to))]
-      .map((id) => members.get(id))
-      .filter((m) => m?.paymentInfo);
-    const text = [
-      `📒 ${view.ledger.name} 結算`,
-      `總支出 ${formatMoney(summary.totalSpentMinor, base)}`,
-      '',
-      ...lines,
-      ...(payees.length ? ['', '收款資訊：', ...payees.map((m) => `・${m!.displayName}：${m!.paymentInfo}`)] : []),
-      '',
-      `查看明細：${ledgerLink(view.ledger.id)}`,
-    ].join('\n');
+    const text = settlementText({
+      ledgerName: view.ledger.name,
+      totalSpentMinor: summary.totalSpentMinor,
+      transfers: summary.transfers,
+      base,
+      members,
+      link: ledgerLink(view.ledger.id),
+    });
     void run(async () => {
       const result = await shareText(text);
       if (result === 'sent') notify('已傳送到聊天室');
