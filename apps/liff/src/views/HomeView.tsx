@@ -37,7 +37,7 @@ export function HomeView(props: ViewProps) {
   }
 
   return (
-    <main className="page">
+    <main className={closedAt === null ? 'page with-footer' : 'page'}>
       <TopBar
         title={view.ledger.name}
         action={
@@ -70,14 +70,10 @@ export function HomeView(props: ViewProps) {
       <section className="card balance-card">
         <p className="muted small">我的餘額</p>
         <p className="balance-amount">
-          {myBalance === 0 ? (
-            <span>已結清</span>
-          ) : (
-            <>
-              <span className="small">{myBalance > 0 ? '應收 ' : '應付 '}</span>
-              <Money minor={myBalance} currency={base} signed />
-            </>
-          )}
+          {myBalance === 0 ? <span>已結清 ✓</span> : <Money minor={myBalance} currency={base} signed />}
+        </p>
+        <p className={`balance-status small ${myBalance > 0 ? 'positive' : myBalance < 0 ? 'negative' : 'muted'}`}>
+          {myBalance > 0 ? '大家還要付你這麼多' : myBalance < 0 ? '你還要付出這麼多' : '你和大家之間沒有待結清的款項'}
         </p>
         <p className="muted small">
           總支出 <Money minor={summary.totalSpentMinor} currency={base} /> · {view.members.length} 位成員
@@ -90,16 +86,8 @@ export function HomeView(props: ViewProps) {
             </>
           )}
         </p>
-        {closedAt === null && <MyTransfers {...props} />}
         {closedAt === null ? (
-          <div className="button-row">
-            <button type="button" className="button primary" onClick={() => navigate({ name: 'expense', id: null })}>
-              ＋ 新增支出
-            </button>
-            <button type="button" className="button" onClick={() => navigate({ name: 'settle' })}>
-              結算
-            </button>
-          </div>
+          <MyTransfers {...props} />
         ) : (
           <button type="button" className="button block spaced" onClick={() => navigate({ name: 'settle' })}>
             查看結算
@@ -161,27 +149,43 @@ export function HomeView(props: ViewProps) {
       )}
 
       {expenses.length === 0 ? (
-        <p className="empty">還沒有任何支出，點「新增支出」開始記帳。</p>
+        closedAt === null ? (
+          <section className="card onboarding">
+            <h2>開始記第一筆 ✍️</h2>
+            <ol>
+              <li>按下方「＋ 新增支出」，輸入金額</li>
+              <li>點頭像選誰付的錢</li>
+              <li>選要分給哪些人，按儲存</li>
+            </ol>
+            <p className="muted small">之後在群組按「➕ 記一筆」，就能直接打開新增畫面。</p>
+          </section>
+        ) : (
+          <p className="empty">這本帳本沒有任何支出。</p>
+        )
       ) : filtered.length === 0 ? (
         <p className="empty">沒有符合條件的支出。</p>
       ) : (
         [...groups].map(([date, items]) => (
           <section key={date}>
-            <h2 className="section-title">{date}</h2>
+            <h2 className="section-title day-title">
+              <span>{date}</span>
+              <Money minor={items.reduce((s, e) => s + e.baseAmountMinor, 0)} currency={base} />
+            </h2>
             <ul className="list card">
               {items.map((e) => {
                 const payer = e.payers[0];
                 const myShare = e.shares.find((s) => s.memberId === view.meMemberId);
+                const category = categoryMeta(e.category);
                 return (
                   <li key={e.id}>
                     <button type="button" className="list-item" onClick={() => navigate({ name: 'expense', id: e.id })}>
-                      <Avatar member={payer && members.get(payer.memberId)} />
+                      <span className="category-tile" role="img" aria-label={category.label}>
+                        {category.emoji}
+                      </span>
                       <span className="list-main">
-                        <span className="list-title">
-                          <span aria-label={categoryMeta(e.category).label}>{categoryMeta(e.category).emoji}</span>{' '}
-                          {e.title}
-                        </span>
-                        <span className="muted small">
+                        <span className="list-title">{e.title}</span>
+                        <span className="muted small list-sub">
+                          <Avatar member={payer && members.get(payer.memberId)} size={16} />
                           {payer ? members.name(payer.memberId) : ''} 付款
                           {e.payers.length > 1 ? ` 等 ${e.payers.length} 人` : ''}
                           {myShare ? (
@@ -221,10 +225,21 @@ export function HomeView(props: ViewProps) {
         </button>
         {data.isAdmin && (
           <button type="button" className="link-button" onClick={() => navigate({ name: 'admin' })}>
-            🛠 回饋管理
+            🛠 管理
           </button>
         )}
       </footer>
+
+      {closedAt === null && (
+        <footer className="sticky-footer home-actions">
+          <button type="button" className="button primary" onClick={() => navigate({ name: 'expense', id: null })}>
+            ＋ 新增支出
+          </button>
+          <button type="button" className="button" onClick={() => navigate({ name: 'settle' })}>
+            結算
+          </button>
+        </footer>
+      )}
     </main>
   );
 }

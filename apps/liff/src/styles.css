@@ -142,9 +142,22 @@ select {
 }
 
 .balance-card .balance-amount {
-  font-size: 30px;
+  font-size: 34px;
   font-weight: 700;
-  margin: 2px 0 4px;
+  line-height: 1.15;
+  margin: 2px 0 2px;
+}
+
+.balance-card .balance-status {
+  margin: 0 0 8px;
+}
+
+.balance-status.positive {
+  color: var(--positive);
+}
+
+.balance-status.negative {
+  color: var(--negative);
 }
 
 .muted {
@@ -248,13 +261,6 @@ select {
   padding: 2px 0;
 }
 
-.button-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 10px;
-  margin-top: 14px;
-}
-
 .link-button {
   border: 0;
   background: none;
@@ -303,6 +309,116 @@ select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.list-sub .avatar {
+  display: inline-grid;
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+
+.category-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-size: 20px;
+}
+
+.section-title.day-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.onboarding h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.onboarding ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  line-height: 1.8;
+}
+
+.onboarding p {
+  margin: 0;
+}
+
+/* Home: add / settle buttons pinned to the bottom, within the page width */
+.sticky-footer.home-actions {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 10px;
+  padding-left: max(16px, calc((100% - 528px) / 2));
+  padding-right: max(16px, calc((100% - 528px) / 2));
+}
+
+.sticky-footer.home-actions .button {
+  max-width: none;
+  margin: 0;
+}
+
+/* Loading placeholders */
+.skeleton {
+  background: var(--surface-2);
+  border-radius: 8px;
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-bar {
+  height: 24px;
+  width: 40%;
+  margin: 18px auto 16px;
+}
+
+.skeleton-amount {
+  height: 36px;
+  width: 50%;
+  margin: 10px 0;
+}
+
+.skeleton-line {
+  height: 12px;
+  width: 80%;
+  margin: 6px 0;
+}
+
+.skeleton-line.short {
+  width: 35%;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.skeleton-row-main {
+  flex: 1;
+}
+
+.skeleton-tile {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
 }
 
 .list-side {

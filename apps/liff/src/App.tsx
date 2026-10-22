@@ -173,7 +173,7 @@ export function App() {
       </>
     );
   }
-  if (!ctx) return <FullScreenMessage title="載入中…" />;
+  if (!ctx) return <LoadingSkeleton />;
   const back = () => navigate({ name: 'home' });
 
   return (
@@ -198,6 +198,31 @@ export interface ViewProps {
   data: LedgerData;
   reload: () => Promise<void>;
   notify: (message: string) => void;
+}
+
+/** Grey placeholders in the shape of the home page while the ledger loads. */
+function LoadingSkeleton() {
+  return (
+    <main className="page" aria-busy="true" aria-label="載入中">
+      <div className="skeleton skeleton-bar" />
+      <div className="card">
+        <div className="skeleton skeleton-line short" />
+        <div className="skeleton skeleton-amount" />
+        <div className="skeleton skeleton-line" />
+      </div>
+      <div className="card">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="skeleton-row">
+            <div className="skeleton skeleton-tile" />
+            <div className="skeleton-row-main">
+              <div className="skeleton skeleton-line" />
+              <div className="skeleton skeleton-line short" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </main>
+  );
 }
 
 function FullScreenMessage({ title, body }: { title: string; body?: string }) {

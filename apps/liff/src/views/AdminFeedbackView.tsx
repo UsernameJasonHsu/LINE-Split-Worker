@@ -40,7 +40,7 @@ export function AdminFeedbackView({
 
   return (
     <main className="page">
-      <TopBar title="回饋管理" onBack={onBack} />
+      <TopBar title="管理" onBack={onBack} />
       <UsageCard account={account} />
       <UserStatsCard account={account} />
       <div className="chips" role="tablist">
