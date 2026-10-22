@@ -32,15 +32,22 @@ export async function applyMigrations(db: D1Database, files = MIGRATIONS): Promi
   }
 }
 
+/** Stands in for the WRITE_LIMITER binding: allows everyone except the keys in `blocked`. */
+export const writeLimiter = {
+  blocked: new Set<string>(),
+  limit: async ({ key }: { key: string }) => ({ success: !writeLimiter.blocked.has(key) }),
+};
+
 export async function createTestEnv({ migrate = true } = {}) {
   const proxy = await getPlatformProxy<Env>({ configPath: 'wrangler.jsonc', persist: false });
-  const env: Env = { ...proxy.env, ...TEST_ENV };
+  const env: Env = { ...proxy.env, ...TEST_ENV, WRITE_LIMITER: writeLimiter };
   if (migrate) await applyMigrations(env.DB);
 
   return {
     env,
     dispose: () => proxy.dispose(),
     reset: async () => {
+      writeLimiter.blocked.clear();
       await env.DB.batch(TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
     },
   };

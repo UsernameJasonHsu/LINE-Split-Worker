@@ -78,7 +78,7 @@ async function requireMember(c: Ctx): Promise<LedgerScope> {
   const ledger = await findLedger(c.env.DB, c.req.param('ledgerId')!);
   if (!ledger) throw new HttpError(404, 'Ledger not found');
   const members = await listMembers(c.env.DB, ledger.id);
-  const me = members.find((m) => m.line_user_id === c.get('user').lineUserId);
+  const me = members.find((m) => m.line_user_id === c.get('user').lineUserId && m.left_at === null);
   if (!me) throw new HttpError(403, 'Not a member of this ledger');
   return { ledger, members, me };
 }
@@ -108,6 +108,7 @@ async function ledgerView(db: D1Database, { ledger, members, me }: LedgerScope) 
       avatarUrl: m.avatar_url,
       isVirtual: m.is_virtual === 1,
       paymentInfo: m.payment_info ?? null,
+      hasLeft: m.left_at !== null,
     })),
     meMemberId: me.id,
   };
@@ -124,6 +125,11 @@ api.use('*', async (c, next) => {
     displayName: claims.name ?? 'LINE 使用者',
     pictureUrl: claims.picture ?? null,
   });
+  // Per-user cap on writes; reads stay unlimited so the app never fails to load.
+  if (c.req.method !== 'GET' && c.env.WRITE_LIMITER) {
+    const { success } = await c.env.WRITE_LIMITER.limit({ key: claims.sub });
+    if (!success) throw new HttpError(429, 'Too many requests; slow down');
+  }
   await next();
 });
 
@@ -131,13 +137,15 @@ api.use('*', async (c, next) => {
  * Idempotent; refreshes name/avatar. New members must be in the ledger's LINE
  * group, so a forwarded link doesn't expose the ledger (and everyone's payment
  * info) to outsiders. Closed ledgers only admit their existing members.
+ * Members who left the group must be back in it to get in again.
  */
 async function joinLedger(c: Ctx): Promise<LedgerScope> {
   const ledger = await findLedger(c.env.DB, c.req.param('ledgerId')!);
   if (!ledger) throw new HttpError(404, 'Ledger not found');
   const user = c.get('user');
-  if (!(await findMemberByLineUser(c.env.DB, ledger.id, user.lineUserId))) {
-    if (ledger.closed_at !== null) throw new HttpError(403, 'Not a member of this closed ledger');
+  const existing = await findMemberByLineUser(c.env.DB, ledger.id, user.lineUserId);
+  if (!existing || existing.left_at !== null) {
+    if (!existing && ledger.closed_at !== null) throw new HttpError(403, 'Not a member of this closed ledger');
     if (ledger.line_group_id) {
       const line = new LineClient(c.env.LINE_CHANNEL_ACCESS_TOKEN);
       let inGroup: boolean;

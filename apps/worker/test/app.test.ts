@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Env } from '../src/env';
-import { apiRequest, callApp, createTestEnv, installFakeExternal, signedWebhook, TEST_ENV } from './helpers';
+import { apiRequest, callApp, createTestEnv, installFakeExternal, signedWebhook, TEST_ENV, writeLimiter } from './helpers';
 
 let env: Env;
 let dispose: () => Promise<void>;
@@ -643,6 +643,88 @@ describe('hardening', () => {
     // Existing members re-open without a group check (e.g. after leaving the group).
     fake.notInGroup.add('Ualice');
     expect((await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice')).status).toBe(200);
+  });
+
+  it('revokes access when a member leaves the group, and restores it when they are back', async () => {
+    const ledgerId = await joinGroup();
+    const alice = (await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice')).body.meMemberId as string;
+    await api('POST', `/ledgers/${ledgerId}/join`, 'token-bob');
+    await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', {
+      title: '晚餐',
+      currency: 'TWD',
+      amount: '600',
+      payers: [{ memberId: alice, amount: '600' }],
+      split: { type: 'equal', memberIds: [alice] },
+    });
+
+    await callApp(
+      env,
+      signedWebhook([
+        { type: 'memberLeft', source: groupSource(), left: { members: [{ type: 'user', userId: 'Ualice' }] } },
+      ]),
+    );
+    fake.notInGroup.add('Ualice');
+    expect((await api('GET', `/ledgers/${ledgerId}`, 'token-alice')).status).toBe(403);
+    expect((await api('GET', `/ledgers/${ledgerId}/expenses`, 'token-alice')).status).toBe(403);
+    const reopen = await api('POST', `/ledgers/${ledgerId}/open`, 'token-alice');
+    expect(reopen.status).toBe(403);
+    expect(reopen.body.error).toMatch(/LINE group/);
+
+    // The others still see Alice and her expense.
+    const bobView = (await api('POST', `/ledgers/${ledgerId}/open`, 'token-bob')).body;
+    expect(bobView.view.members.map((m: { displayName: string }) => m.displayName)).toContain('Alice');
+    expect(bobView.expenses).toHaveLength(1);
+
+    // Back in the group: opening the ledger lets her in again as the same member.
+    fake.notInGroup.delete('Ualice');
+    const back = await api('POST', `/ledgers/${ledgerId}/open`, 'token-alice');
+    expect(back.status).toBe(200);
+    expect(back.body.view.meMemberId).toBe(alice);
+    expect((await api('GET', `/ledgers/${ledgerId}/expenses`, 'token-alice')).status).toBe(200);
+  });
+
+  it('restores a member who left once they speak in the group again', async () => {
+    const ledgerId = await joinGroup();
+    await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice');
+    await callApp(
+      env,
+      signedWebhook([
+        { type: 'memberLeft', source: groupSource(), left: { members: [{ type: 'user', userId: 'Ualice' }] } },
+      ]),
+    );
+    expect((await api('GET', `/ledgers/${ledgerId}`, 'token-alice')).status).toBe(403);
+    await callApp(
+      env,
+      signedWebhook([{ type: 'message', replyToken: 'rt', source: groupSource('Ualice'), message: { type: 'text', text: 'hi' } }]),
+    );
+    expect((await api('GET', `/ledgers/${ledgerId}`, 'token-alice')).status).toBe(200);
+  });
+
+  it('does not carry members who left into the next ledger', async () => {
+    const ledgerId = await joinGroup();
+    await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice');
+    await api('POST', `/ledgers/${ledgerId}/join`, 'token-bob');
+    await callApp(
+      env,
+      signedWebhook([{ type: 'memberLeft', source: groupSource(), left: { members: [{ type: 'user', userId: 'Ubob' }] } }]),
+    );
+    await api('POST', `/ledgers/${ledgerId}/close`, 'token-alice');
+    const next = await api('POST', `/ledgers/${ledgerId}/next`, 'token-alice', { name: '下一趟' });
+    expect(next.status).toBe(201);
+    expect(next.body.members.map((m: { displayName: string }) => m.displayName)).toEqual(['Alice']);
+  });
+
+  it('limits writes per user but never reads', async () => {
+    const ledgerId = await joinGroup();
+    await api('POST', `/ledgers/${ledgerId}/join`, 'token-alice');
+    writeLimiter.blocked.add('Ualice');
+    const blocked = await api('POST', '/feedback', 'token-alice', { category: 'idea', message: 'hi' });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error).toMatch(/Too many requests/);
+    expect((await api('GET', `/ledgers/${ledgerId}`, 'token-alice')).status).toBe(200);
+    // Other users are unaffected.
+    expect((await api('POST', `/ledgers/${ledgerId}/join`, 'token-bob')).status).toBe(200);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM feedback').first('n')).toBe(0);
   });
 
   it('refuses a join it cannot verify instead of letting it through', async () => {

@@ -6,7 +6,9 @@ import { ledgerLink, openLedger, trySendToChat } from '../liff';
 
 /** Shown on a closed ledger when the group has no open one yet. */
 export function StartNextLedger({ api, data, notify }: ViewProps) {
-  const { members, meMemberId } = data.view;
+  const { meMemberId } = data.view;
+  // Members who left the group can't be carried over.
+  const members = data.view.members.filter((m) => !m.hasLeft);
   const [name, setName] = useState('');
   const [chosen, setChosen] = useState(() => new Set(members.map((m) => m.id)));
   const [busy, setBusy] = useState(false);

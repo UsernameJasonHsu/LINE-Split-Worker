@@ -20,6 +20,8 @@ export interface MemberRow {
   avatar_url: string | null;
   is_virtual: number;
   joined_at: number;
+  /** When they left the LINE group; such members can no longer open the ledger. */
+  left_at: number | null;
   /** From payment_profiles; only present when loaded via listMembers. */
   payment_info?: string | null;
 }
@@ -117,7 +119,7 @@ export async function startNextLedger(
         `INSERT INTO members (id, ledger_id, line_user_id, display_name, avatar_url, is_virtual, joined_at)
          SELECT lower(hex(randomblob(16))), ?, line_user_id, display_name, avatar_url, is_virtual, joined_at
          FROM members
-         WHERE ledger_id = ?
+         WHERE ledger_id = ? AND left_at IS NULL
            AND (? IS NULL OR id IN (SELECT value FROM json_each(?)) OR line_user_id = ?)
            AND ${created}`,
       )
@@ -148,7 +150,8 @@ export async function listGroupLedgers(
       `SELECT l.id, l.name, l.base_currency, l.created_at, l.closed_at,
          COALESCE((SELECT SUM(e.base_amount_minor) FROM expenses e
                    WHERE e.ledger_id = l.id AND e.deleted_at IS NULL), 0) AS total,
-         EXISTS (SELECT 1 FROM members m WHERE m.ledger_id = l.id AND m.line_user_id = ?) AS is_member
+         EXISTS (SELECT 1 FROM members m
+                 WHERE m.ledger_id = l.id AND m.line_user_id = ? AND m.left_at IS NULL) AS is_member
        FROM ledgers l WHERE l.line_group_id = ? ORDER BY l.created_at DESC`,
     )
     .bind(lineUserId, groupId)
@@ -213,7 +216,23 @@ export function findMemberByLineUser(db: D1Database, ledgerId: string, lineUserI
     .first<MemberRow>();
 }
 
-/** Adds a LINE user to the ledger, or refreshes their name/avatar if already a member. */
+/** Revokes the user's access to every ledger of the group they just left. */
+export async function markMemberLeft(db: D1Database, groupId: string, lineUserId: string, now = Date.now()) {
+  await db
+    .prepare(
+      `UPDATE members SET left_at = ?
+       WHERE line_user_id = ? AND left_at IS NULL
+         AND ledger_id IN (SELECT id FROM ledgers WHERE line_group_id = ?)`,
+    )
+    .bind(now, lineUserId, groupId)
+    .run();
+}
+
+/**
+ * Adds a LINE user to the ledger, or refreshes their name/avatar if already a
+ * member. Callers have checked the user is in the group, so this also restores
+ * a member who had left.
+ */
 export async function upsertLineMember(
   db: D1Database,
   ledgerId: string,
@@ -225,7 +244,7 @@ export async function upsertLineMember(
       `INSERT INTO members (id, ledger_id, line_user_id, display_name, avatar_url, is_virtual, joined_at)
        VALUES (?, ?, ?, ?, ?, 0, ?)
        ON CONFLICT (ledger_id, line_user_id)
-       DO UPDATE SET display_name = excluded.display_name, avatar_url = excluded.avatar_url`,
+       DO UPDATE SET display_name = excluded.display_name, avatar_url = excluded.avatar_url, left_at = NULL`,
     )
     .bind(crypto.randomUUID(), ledgerId, lineUserId, profile.displayName, profile.pictureUrl ?? null, Date.now())
     .run();

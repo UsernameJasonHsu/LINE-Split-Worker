@@ -8,6 +8,8 @@ export interface Env {
   ADMIN_LINE_USER_IDS: string;
   /** "on" to push new feedback to admins (uses the monthly push quota). */
   FEEDBACK_PUSH: string;
+  /** Per-user limit on API writes (wrangler `ratelimits`); unset means no limit. */
+  WRITE_LIMITER?: RateLimit;
 }
 
 export interface AuthUser {

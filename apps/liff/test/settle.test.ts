@@ -9,6 +9,7 @@ const member = (id: string, displayName: string, paymentInfo: string | null = nu
   avatarUrl: null,
   isVirtual: false,
   paymentInfo,
+  hasLeft: false,
 });
 
 const members = memberLookup([member('a', '小明', '國泰 013-1234'), member('b', '小華'), member('c', '阿美')]);

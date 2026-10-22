@@ -11,9 +11,9 @@ import {
 } from '../src/lib/form';
 
 const members: Member[] = [
-  { id: 'a', displayName: 'Alice', avatarUrl: null, isVirtual: false, paymentInfo: null },
-  { id: 'b', displayName: 'Bob', avatarUrl: null, isVirtual: false, paymentInfo: null },
-  { id: 'c', displayName: 'Cara', avatarUrl: null, isVirtual: false, paymentInfo: null },
+  { id: 'a', displayName: 'Alice', avatarUrl: null, isVirtual: false, paymentInfo: null, hasLeft: false },
+  { id: 'b', displayName: 'Bob', avatarUrl: null, isVirtual: false, paymentInfo: null, hasLeft: false },
+  { id: 'c', displayName: 'Cara', avatarUrl: null, isVirtual: false, paymentInfo: null, hasLeft: false },
 ];
 const form = (patch = {}) => ({ ...emptyForm(members, 'a', 'TWD', Date.UTC(2026, 9, 16, 4)), title: '晚餐', ...patch });
 

@@ -7,6 +7,8 @@ export interface Member {
   isVirtual: boolean;
   /** Self-provided payment details (bank account, LINE Pay, …). */
   paymentInfo: string | null;
+  /** Left the LINE group; still part of the ledger's history and balances. */
+  hasLeft: boolean;
 }
 
 export interface LedgerView {
@@ -309,7 +311,8 @@ export function errorMessage(err: unknown): string {
     if (err.status === 403 && /admin/i.test(err.message)) return '只有管理員可以使用此功能';
     if (err.status === 403 && /LINE group/i.test(err.message)) return '只有群組成員可以加入這本帳本，請從群組裡的連結開啟';
     if (err.status === 403) return '你不是這個帳本的成員';
-    if (err.status === 429) return '今天送出的回饋已達上限，請明天再試';
+    if (err.status === 429 && /feedback/i.test(err.message)) return '今天送出的回饋已達上限，請明天再試';
+    if (err.status === 429) return '操作太頻繁，請稍等一分鐘再試';
     if (err.status === 404) return '找不到資料，可能已被刪除';
     if (err.status === 409 && /unsettled/i.test(err.message)) return '還有款項未結清，請先全部標記已付再結束帳本';
     if (err.status === 409 && /closed/i.test(err.message)) return '這本帳本已結束，無法修改';

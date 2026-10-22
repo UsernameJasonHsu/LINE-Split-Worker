@@ -19,6 +19,15 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Each LINE user may make at most 60 API writes (non-GET) per minute; saving
+  // one expense takes about 3 (save, reload, entry stats).
+  "ratelimits": [
+    {
+      "name": "WRITE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
   // Not secret. Fill in from LINE Developers Console.
   // LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN go in .dev.vars and `wrangler secret put`.
   "vars": {

@@ -9,6 +9,7 @@ const members: Member[] = ['a', 'b', 'c'].map((id) => ({
   avatarUrl: null,
   isVirtual: false,
   paymentInfo: null,
+  hasLeft: false,
 }));
 
 function expense(

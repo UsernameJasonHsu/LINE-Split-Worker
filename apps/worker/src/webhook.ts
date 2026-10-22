@@ -19,6 +19,7 @@ import {
   findMemberByLineUser,
   findOpenLedgerByGroup,
   listMembers,
+  markMemberLeft,
   upsertLineMember,
   type LedgerRow,
 } from './services/ledgers';
@@ -35,6 +36,8 @@ interface WebhookEvent {
   source?: Source;
   message?: { type: string; text?: string };
   postback?: { data: string };
+  /** memberLeft: who left the group. */
+  left?: { members: { type: string; userId?: string }[] };
 }
 
 const DEFAULT_LEDGER_NAME = '分帳帳本';
@@ -106,6 +109,11 @@ async function handleEvent(event: WebhookEvent, env: Env, line: LineClient): Pro
     case 'leave':
       await archiveGroupLedger(env.DB, source.groupId);
       return;
+    case 'memberLeft':
+      for (const m of event.left?.members ?? []) {
+        if (m.userId) await markMemberLeft(env.DB, source.groupId, m.userId);
+      }
+      return;
     case 'message': {
       // Between ledgers (last one closed) the group has no open ledger; commands
       // then refer to the latest one. A ledger is only auto-created for a group
@@ -131,7 +139,9 @@ async function handleEvent(event: WebhookEvent, env: Env, line: LineClient): Pro
  */
 async function registerSpeaker(env: Env, line: LineClient, ledger: LedgerRow, groupId: string, userId: string) {
   try {
-    if (await findMemberByLineUser(env.DB, ledger.id, userId)) return;
+    // Speaking in the group also restores a member who had left and come back.
+    const member = await findMemberByLineUser(env.DB, ledger.id, userId);
+    if (member && member.left_at === null) return;
     const profile = await line.getGroupMemberProfile(groupId, userId);
     await upsertLineMember(env.DB, ledger.id, userId, profile);
   } catch (err) {

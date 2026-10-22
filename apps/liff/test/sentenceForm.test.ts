@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { Member } from '../src/api';
 import { describeParsed, parseForForm, sentencePatch, type SentenceField } from '../src/lib/sentenceForm';
 
-const member = (id: string, displayName: string): Member => ({ id, displayName, avatarUrl: null, isVirtual: false, paymentInfo: null });
+const member = (id: string, displayName: string): Member => ({
+  id,
+  displayName,
+  avatarUrl: null,
+  isVirtual: false,
+  paymentInfo: null,
+  hasLeft: false,
+});
 const members = [member('me', 'Ryan'), member('ming', '小明'), member('hua', '小華'), member('amy', '阿美')];
 const names: Record<string, string> = { me: '我', ming: '小明', hua: '小華', amy: '阿美' };
 const parse = (text: string) => parseForForm(text, members, 'me');
