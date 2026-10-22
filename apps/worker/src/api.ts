@@ -131,8 +131,8 @@ api.use('*', async (c, next) => {
  * group, so a forwarded link doesn't expose the ledger (and everyone's payment
  * info) to outsiders. Closed ledgers only admit their existing members.
  */
-api.post('/ledgers/:ledgerId/join', async (c) => {
-  const ledger = await findLedger(c.env.DB, c.req.param('ledgerId'));
+async function joinLedger(c: Ctx): Promise<LedgerScope> {
+  const ledger = await findLedger(c.env.DB, c.req.param('ledgerId')!);
   if (!ledger) throw new HttpError(404, 'Ledger not found');
   const user = c.get('user');
   if (!(await findMemberByLineUser(c.env.DB, ledger.id, user.lineUserId))) {
@@ -151,7 +151,32 @@ api.post('/ledgers/:ledgerId/join', async (c) => {
   }
   const me = await upsertLineMember(c.env.DB, ledger.id, user.lineUserId, user);
   const members = await listMembers(c.env.DB, ledger.id);
-  return c.json(await ledgerView(c.env.DB, { ledger, members, me }));
+  return { ledger, members, me };
+}
+
+api.post('/ledgers/:ledgerId/join', async (c) => c.json(await ledgerView(c.env.DB, await joinLedger(c))));
+
+/**
+ * Joins like /join and returns everything the app shows for a ledger in one
+ * round trip. `?visit=1` marks the app's first load, counted for usage stats
+ * (reloads after a change leave it out).
+ */
+api.post('/ledgers/:ledgerId/open', async (c) => {
+  const scope = await joinLedger(c);
+  const { ledger, members } = scope;
+  const { lineUserId } = c.get('user');
+  if (c.req.query('visit') === '1') {
+    c.executionCtx.waitUntil(
+      recordVisit(c.env.DB, lineUserId).catch((err) => console.error('Failed to record visit', err)),
+    );
+  }
+  const [view, expenses, summary, settlements] = await Promise.all([
+    ledgerView(c.env.DB, scope),
+    listExpenses(c.env.DB, ledger.id),
+    getSummary(c.env.DB, ledger, members),
+    listSettlements(c.env.DB, ledger.id),
+  ]);
+  return c.json({ view, expenses, summary, settlements, isAdmin: adminIds(c).includes(lineUserId) });
 });
 
 api.get('/ledgers/:ledgerId', async (c) => c.json(await ledgerView(c.env.DB, await requireMember(c))));
@@ -276,14 +301,7 @@ function requireAdmin(c: Ctx): void {
   if (!adminIds(c).includes(c.get('user').lineUserId)) throw new HttpError(403, 'Admins only');
 }
 
-/** The app calls this once each time it opens a ledger, so it also counts the open for usage stats. */
-api.get('/me', (c) => {
-  const { lineUserId } = c.get('user');
-  c.executionCtx.waitUntil(
-    recordVisit(c.env.DB, lineUserId).catch((err) => console.error('Failed to record visit', err)),
-  );
-  return c.json({ isAdmin: adminIds(c).includes(lineUserId) });
-});
+api.get('/me', (c) => c.json({ isAdmin: adminIds(c).includes(c.get('user').lineUserId) }));
 
 api.post('/feedback', async (c) => {
   const body = await parseJson(c, feedbackSchema);

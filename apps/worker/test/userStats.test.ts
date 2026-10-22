@@ -43,14 +43,18 @@ describe('GET /api/admin/users', () => {
     expect((await api('GET', '/admin/users')).status).toBe(401);
   });
 
-  it('counts opens per user and day through /me', async () => {
+  it('counts opens per user and day from the first load only', async () => {
+    await callApp(env, signedWebhook([{ type: 'join', replyToken: 'rt', source: { type: 'group', groupId: 'C1' } }]));
+    const ledgerId = (await env.DB.prepare('SELECT id FROM ledgers').first<{ id: string }>())!.id;
+    await api('POST', `/ledgers/${ledgerId}/open?visit=1`, 'token-alice');
+    await api('POST', `/ledgers/${ledgerId}/open?visit=1`, 'token-alice');
+    await api('POST', `/ledgers/${ledgerId}/open`, 'token-alice'); // reload after a change
     await api('GET', '/me', 'token-alice');
-    await api('GET', '/me', 'token-alice');
-    await api('GET', '/me', 'token-bob');
+    await api('POST', `/ledgers/${ledgerId}/open?visit=1`, 'token-bob');
 
     const stats = (await api('GET', '/admin/users', 'token-admin')).body;
     const alice = stats.users.find((u: { lineUserId: string }) => u.lineUserId === 'Ualice');
-    expect(alice).toMatchObject({ opens: 2, activeDays: 1, displayName: 'LINE 使用者' });
+    expect(alice).toMatchObject({ opens: 2, activeDays: 1, displayName: 'Alice' });
     expect(alice.lastActiveAt).toEqual(expect.any(Number));
     expect(stats.daily).toHaveLength(DAILY_SERIES_DAYS);
     expect(stats.daily.at(-1)).toEqual({ day: dayKey(Date.now()), users: 2, opens: 3 });

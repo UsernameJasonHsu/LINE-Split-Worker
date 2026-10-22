@@ -5,10 +5,7 @@ import {
   errorMessage,
   type AccountApi,
   type Api,
-  type Expense,
-  type LedgerView,
-  type Settlement,
-  type Summary,
+  type LedgerSnapshot,
 } from './api';
 import { initLiff, ledgerIdFromUrl, liff, urlParam } from './liff';
 import { AdminFeedbackView } from './views/AdminFeedbackView';
@@ -20,13 +17,7 @@ import { LedgersView } from './views/LedgersView';
 import { SettleView } from './views/SettleView';
 import { StatsView } from './views/StatsView';
 
-export interface LedgerData {
-  view: LedgerView;
-  expenses: Expense[];
-  summary: Summary;
-  settlements: Settlement[];
-  isAdmin: boolean;
-}
+export type LedgerData = LedgerSnapshot;
 
 export type Route =
   | { name: 'home' }
@@ -142,14 +133,8 @@ export function App() {
   const reload = useCallback(async () => {
     if (!api) return;
     try {
-      const view = await api.join();
-      const [expenses, summary, settlements, me] = await Promise.all([
-        api.expenses(),
-        api.summary(),
-        api.settlements(),
-        api.me(),
-      ]);
-      setData({ view, expenses, summary, settlements, isAdmin: me.isAdmin });
+      // The first load counts as a visit; reloads after a change don't.
+      setData(await api.open({ visit: !data }));
     } catch (err) {
       if (!data) setBoot({ status: 'error', message: errorMessage(err) });
       else setToast(errorMessage(err));

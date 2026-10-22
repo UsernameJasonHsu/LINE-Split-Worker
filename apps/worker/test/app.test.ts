@@ -182,6 +182,37 @@ describe('expenses and settlement flow', () => {
     expect((await api('GET', `/ledgers/${ledgerId}/summary`, 'token-bob')).body.transfers).toHaveLength(1);
   });
 
+  it('open returns the same ledger data as the separate endpoints in one request', async () => {
+    const { ledgerId, alice, bob } = await setupLedger();
+    await api('POST', `/ledgers/${ledgerId}/expenses`, 'token-alice', {
+      title: '午餐',
+      currency: 'TWD',
+      amount: '600',
+      payers: [{ memberId: alice, amount: '600' }],
+      split: { type: 'equal', memberIds: [alice, bob] },
+    });
+    await api('POST', `/ledgers/${ledgerId}/settlements`, 'token-bob', { fromMemberId: bob, toMemberId: alice, amount: '100' });
+
+    const opened = await api('POST', `/ledgers/${ledgerId}/open`, 'token-bob');
+    expect(opened.status).toBe(200);
+    expect(opened.body).toEqual({
+      view: (await api('GET', `/ledgers/${ledgerId}`, 'token-bob')).body,
+      expenses: (await api('GET', `/ledgers/${ledgerId}/expenses`, 'token-bob')).body.expenses,
+      summary: (await api('GET', `/ledgers/${ledgerId}/summary`, 'token-bob')).body,
+      settlements: (await api('GET', `/ledgers/${ledgerId}/settlements`, 'token-bob')).body.settlements,
+      isAdmin: false,
+    });
+    expect(opened.body.summary.transfers).toEqual([{ from: bob, to: alice, amountMinor: 200 }]);
+  });
+
+  it('open joins like /join and enforces the same checks', async () => {
+    const ledgerId = await joinGroup();
+    expect((await api('POST', '/ledgers/nope/open', 'token-alice')).status).toBe(404);
+    const opened = await api('POST', `/ledgers/${ledgerId}/open`, 'token-alice');
+    expect(opened.body.view.members).toHaveLength(1);
+    expect(opened.body.view.meMemberId).toBe(opened.body.view.members[0].id);
+  });
+
   it('fetches and caches the auto rate when none is given', async () => {
     const { ledgerId, alice, bob } = await setupLedger();
     fake.fxRates.USD = { TWD: 32.5, JPY: 150, EUR: 0.92 };

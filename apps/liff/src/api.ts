@@ -109,6 +109,15 @@ export interface Summary {
   transfers: Transfer[];
 }
 
+/** Everything the app shows for a ledger, from one `open` request. */
+export interface LedgerSnapshot {
+  view: LedgerView;
+  expenses: Expense[];
+  summary: Summary;
+  settlements: Settlement[];
+  isAdmin: boolean;
+}
+
 export interface Settlement {
   id: string;
   fromMemberId: string;
@@ -216,7 +225,6 @@ export type AccountApi = ReturnType<typeof createAccountApi>;
 export function createAccountApi(getIdToken: () => string | null) {
   const request = makeRequest(getIdToken);
   return {
-    me: () => request<{ isAdmin: boolean }>('GET', '/api/me'),
     setMyPaymentInfo: async (info: string) =>
       (await request<{ info: string | null }>('PUT', '/api/me/payment-info', { info })).info,
     sendFeedback: (body: {
@@ -244,20 +252,19 @@ export function createApi(getIdToken: () => string | null, ledgerId: string) {
 
   return {
     ...createAccountApi(getIdToken),
-    join: () => request<LedgerView>('POST', `${base}/join`),
+    /** Joins and loads the whole ledger in one request; `visit` counts it as an app open. */
+    open: ({ visit }: { visit: boolean }) =>
+      request<LedgerSnapshot>('POST', `${base}/open${visit ? '?visit=1' : ''}`),
     audit: () => request<{ baseCurrency: string; entries: AuditEntry[] }>('GET', `${base}/audit`),
     history: async () => (await request<{ ledgers: GroupLedger[] }>('GET', `${base}/history`)).ledgers,
     closeLedger: () => request<LedgerView>('POST', `${base}/close`),
     startNextLedger: (name: string, memberIds: string[]) =>
       request<LedgerView>('POST', `${base}/next`, { name, memberIds }),
     patchLedger: (patch: { name?: string; baseCurrency?: string }) => request<LedgerView>('PATCH', base, patch),
-    expenses: async () => (await request<{ expenses: Expense[] }>('GET', `${base}/expenses`)).expenses,
     createExpense: (body: ExpenseBody) => request<Expense>('POST', `${base}/expenses`, body),
     updateExpense: (id: string, body: ExpenseBody & { revision: string }) =>
       request<Expense>('PUT', `${base}/expenses/${id}`, body),
     deleteExpense: (id: string) => request<void>('DELETE', `${base}/expenses/${id}`),
-    summary: () => request<Summary>('GET', `${base}/summary`),
-    settlements: async () => (await request<{ settlements: Settlement[] }>('GET', `${base}/settlements`)).settlements,
     createSettlement: (body: { fromMemberId: string; toMemberId: string; amount: string }) =>
       request<Settlement>('POST', `${base}/settlements`, body),
     deleteSettlement: (id: string) => request<void>('DELETE', `${base}/settlements/${id}`),
