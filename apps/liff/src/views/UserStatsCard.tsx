@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { errorMessage, type AccountApi, type UserStats } from '../api';
+import { errorMessage, type AccountApi, type EntrySource, type UserStats } from '../api';
 import { Avatar } from '../components';
 import { formatLastActive, SORT_LABELS, sortUsers, userKpis, type UserSort } from '../lib/userStats';
 
@@ -44,6 +44,48 @@ function DailyChart({ daily }: { daily: UserStats['daily'] }) {
         <span>{daily[0]!.day.slice(5).replace('-', '/')}</span>
         <span>今天</span>
       </div>
+    </div>
+  );
+}
+
+const ENTRY_LABELS: Record<EntrySource, string> = { form: '表單', sentence: '一句話' };
+
+/** How fast new expenses get recorded, per entry mode, over the last 30 days. */
+function EntryFlow({ entry }: { entry: UserStats['entry'] }) {
+  const sources = Object.keys(ENTRY_LABELS) as EntrySource[];
+  return (
+    <div className="entry-flow">
+      <div className="meter-head">
+        <span>記帳流程（近 30 天）</span>
+        <span className="muted small">從打開表單到存好</span>
+      </div>
+      <table className="entry-table small">
+        <thead>
+          <tr>
+            <th scope="col">方式</th>
+            <th scope="col">存好</th>
+            <th scope="col">放棄率</th>
+            <th scope="col">秒數</th>
+            <th scope="col">點擊</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sources.map((s) => {
+            const e = entry[s];
+            const total = e.saved + e.abandoned;
+            return (
+              <tr key={s}>
+                <th scope="row">{ENTRY_LABELS[s]}</th>
+                <td>{e.saved}</td>
+                <td>{total ? `${Math.round((e.abandoned / total) * 100)}%` : '—'}</td>
+                <td>{e.medianSeconds ?? '—'}</td>
+                <td>{e.medianTaps ?? '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="muted small">秒數與點擊為已存好紀錄的中位數；不含修改既有支出。</p>
     </div>
   );
 }
@@ -95,6 +137,8 @@ export function UserStatsCard({ account }: { account: AccountApi }) {
           ? `開啟次數自 ${stats.trackingSince} 起統計；之前的活躍時間以記帳/結清操作推算。`
           : '開啟次數從這版上線後開始統計；目前活躍時間以記帳/結清操作推算。'}
       </p>
+
+      <EntryFlow entry={stats.entry} />
 
       <label className="field inline-field">
         <span>排序</span>

@@ -978,6 +978,35 @@ textarea:focus {
   justify-content: space-between;
 }
 
+.entry-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entry-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-table th,
+.entry-table td {
+  padding: 6px 4px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.entry-table thead th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.entry-table th[scope='row'],
+.entry-table thead th:first-child {
+  text-align: left;
+}
+
 .inline-field {
   flex-direction: row;
   align-items: center;

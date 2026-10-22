@@ -5,6 +5,7 @@ import { HttpError } from './errors';
 import { getFxRate } from './fx';
 import { verifyIdToken } from './line/idToken';
 import {
+  entrySessionSchema,
   expenseSchema,
   expenseUpdateSchema,
   feedbackPatchSchema,
@@ -46,7 +47,7 @@ import {
 import { listAudit } from './services/audit';
 import { getPaymentInfo, setPaymentInfo } from './services/payments';
 import { getUsage } from './services/usage';
-import { getUserStats, recordVisit } from './services/userStats';
+import { getUserStats, recordEntrySession, recordVisit } from './services/userStats';
 import { createSettlement, deleteSettlement, getSummary, listSettlements } from './services/settlements';
 
 type Ctx = Context<AppEnv>;
@@ -265,6 +266,14 @@ api.put('/ledgers/:ledgerId/expenses/:expenseId', async (c) => {
 api.delete('/ledgers/:ledgerId/expenses/:expenseId', async (c) => {
   const { ledger, me } = requireOpen(await requireMember(c));
   await deleteExpense(c.env.DB, ledger, me, c.req.param('expenseId'));
+  return c.body(null, 204);
+});
+
+/** Usage stats: how a visit to the new-expense form ended (sent by the app, fire-and-forget). */
+api.post('/ledgers/:ledgerId/entry-sessions', async (c) => {
+  const { ledger } = await requireMember(c);
+  const body = await parseJson(c, entrySessionSchema);
+  await recordEntrySession(c.env.DB, ledger.id, c.get('user').lineUserId, body);
   return c.body(null, 204);
 });
 

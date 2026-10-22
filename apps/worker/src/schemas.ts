@@ -25,6 +25,13 @@ const split = z.discriminatedUnion('type', [
 
 export const EXPENSE_SOURCES = ['form', 'sentence'] as const;
 
+export const entrySessionSchema = z.object({
+  outcome: z.enum(['saved', 'abandoned']),
+  source: z.enum(EXPENSE_SOURCES),
+  durationMs: z.number().int().min(0).max(24 * 60 * 60 * 1000),
+  taps: z.number().int().min(0).max(10_000),
+});
+
 export const expenseSchema = z.object({
   title: z.string().trim().min(1).max(100),
   currency,

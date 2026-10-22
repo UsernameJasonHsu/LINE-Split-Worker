@@ -37,8 +37,65 @@ export interface UserStatDto {
   lastActiveAt: number | null;
 }
 
+export interface EntrySession {
+  outcome: 'saved' | 'abandoned';
+  source: 'form' | 'sentence';
+  durationMs: number;
+  taps: number;
+}
+
+/** Records one visit to the new-expense form. */
+export async function recordEntrySession(
+  db: D1Database,
+  ledgerId: string,
+  lineUserId: string,
+  s: EntrySession,
+  now = Date.now(),
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO entry_sessions (ledger_id, line_user_id, outcome, source, duration_ms, taps, at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(ledgerId, lineUserId, s.outcome, s.source, s.durationMs, s.taps, now)
+    .run();
+}
+
+export interface EntryStatDto {
+  saved: number;
+  abandoned: number;
+  /** Medians over saved sessions; null when there are none. */
+  medianSeconds: number | null;
+  medianTaps: number | null;
+}
+
+/** Middle value (mean of the two middle ones for an even count); null for none. */
+export function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const sorted = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+function entryStats(rows: { outcome: string; source: string; duration_ms: number; taps: number }[]) {
+  const of = (source: string): EntryStatDto => {
+    const mine = rows.filter((r) => r.source === source);
+    const saved = mine.filter((r) => r.outcome === 'saved');
+    const ms = median(saved.map((r) => r.duration_ms));
+    return {
+      saved: saved.length,
+      abandoned: mine.length - saved.length,
+      medianSeconds: ms === null ? null : Math.round(ms / 100) / 10,
+      medianTaps: median(saved.map((r) => r.taps)),
+    };
+  };
+  return { form: of('form'), sentence: of('sentence') };
+}
+
 export interface UserStatsDto {
   users: UserStatDto[];
+  /** New-expense form sessions over the last DAILY_SERIES_DAYS days, by how the expense was entered. */
+  entry: { form: EntryStatDto; sentence: EntryStatDto };
   /** Distinct users and opens per day, oldest first, for the last DAILY_SERIES_DAYS days. */
   daily: { day: string; users: number; opens: number }[];
   /** First day with recorded opens (null if none yet). */
@@ -70,7 +127,7 @@ const minOrNull = (...xs: (number | null)[]) => (known(xs).length ? Math.min(...
 
 export async function getUserStats(db: D1Database, now = Date.now()): Promise<UserStatsDto> {
   const since = dayKey(now - (DAILY_SERIES_DAYS - 1) * DAY_MS);
-  const [users, daily, tracking] = await db.batch([
+  const [users, daily, tracking, sessions] = await db.batch([
     db.prepare(
       `WITH ids AS (
          SELECT line_user_id FROM members WHERE line_user_id IS NOT NULL
@@ -126,6 +183,9 @@ export async function getUserStats(db: D1Database, now = Date.now()): Promise<Us
       )
       .bind(since),
     db.prepare('SELECT MIN(day) AS since FROM user_visits'),
+    db
+      .prepare('SELECT outcome, source, duration_ms, taps FROM entry_sessions WHERE at >= ?')
+      .bind(now - DAILY_SERIES_DAYS * DAY_MS),
   ]);
 
   const byDay = new Map((daily!.results as UserStatsDto['daily']).map((r) => [r.day, r]));
@@ -151,5 +211,6 @@ export async function getUserStats(db: D1Database, now = Date.now()): Promise<Us
       return { day, users: row?.users ?? 0, opens: row?.opens ?? 0 };
     }),
     trackingSince: (tracking!.results[0] as { since: string | null } | undefined)?.since ?? null,
+    entry: entryStats(sessions!.results as Parameters<typeof entryStats>[0]),
   };
 }

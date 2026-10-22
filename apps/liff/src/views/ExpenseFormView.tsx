@@ -18,6 +18,7 @@ import {
 import { describeParsed, parseForForm, sentencePatch, type SentenceField } from '../lib/sentenceForm';
 import { expenseNotice, frequentTitles, guessCategory, pastTitles } from '../lib/suggest';
 import { canSendToChat, ledgerLink, trySendToChat } from '../liff';
+import { useEntryTracking } from '../useEntryTracking';
 
 const POST_TO_CHAT_KEY = 'postNewExpenseToChat';
 
@@ -149,6 +150,8 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the currency changes
   }, [form.currency]);
 
+  const entry = useEntryTracking(api, !expenseId && !readOnly, () => (sentence.trim() ? 'sentence' : 'form'));
+
   const validation = useMemo(() => validate(form, base, members), [form, base, members]);
   const titleError = form.title.trim() === '' ? '請輸入項目名稱' : null;
   const showErrors = submitted;
@@ -172,6 +175,7 @@ export function ExpenseFormView({ api, data, reload, notify, expenseId }: ViewPr
       else {
         const source = sentence.trim() ? 'sentence' : 'form';
         await api.createExpense({ ...body, source });
+        entry.saved(source);
         saveEntryMode(source);
         if (chatAvailable && postToChat && validation.ok) {
           const names = memberLookup(members);

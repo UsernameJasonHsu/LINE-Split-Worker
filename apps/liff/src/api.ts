@@ -197,15 +197,39 @@ export interface UserStats {
   users: UserStat[];
   daily: { day: string; users: number; opens: number }[];
   trackingSince: string | null;
+  entry: Record<EntrySource, EntryStat>;
 }
 
-type Request = <T>(method: string, path: string, body?: unknown) => Promise<T>;
+export type EntrySource = 'form' | 'sentence';
+
+export interface EntryStat {
+  saved: number;
+  abandoned: number;
+  medianSeconds: number | null;
+  medianTaps: number | null;
+}
+
+export interface EntrySession {
+  outcome: 'saved' | 'abandoned';
+  source: EntrySource;
+  durationMs: number;
+  taps: number;
+}
+
+/** `keepalive` lets the request finish even if the LIFF window closes meanwhile. */
+type Request = <T>(method: string, path: string, body?: unknown, init?: { keepalive?: boolean }) => Promise<T>;
 
 function makeRequest(getIdToken: () => string | null): Request {
-  return async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return async function request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    init?: { keepalive?: boolean },
+  ): Promise<T> {
     const token = getIdToken();
     const res = await fetch(path, {
       method,
+      keepalive: init?.keepalive,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
@@ -265,6 +289,8 @@ export function createApi(getIdToken: () => string | null, ledgerId: string) {
     updateExpense: (id: string, body: ExpenseBody & { revision: string }) =>
       request<Expense>('PUT', `${base}/expenses/${id}`, body),
     deleteExpense: (id: string) => request<void>('DELETE', `${base}/expenses/${id}`),
+    logEntrySession: (session: EntrySession) =>
+      request<void>('POST', `${base}/entry-sessions`, session, { keepalive: true }),
     createSettlement: (body: { fromMemberId: string; toMemberId: string; amount: string }) =>
       request<Settlement>('POST', `${base}/settlements`, body),
     deleteSettlement: (id: string) => request<void>('DELETE', `${base}/settlements/${id}`),
